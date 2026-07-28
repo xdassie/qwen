@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rust Bevy Module Structure</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      overflow: hidden;
+    }
+    header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+    h1 { font-size: 28px; margin-bottom: 8px; }
+    .subtitle { opacity: 0.8; font-size: 16px; }
+    .controls {
+      padding: 15px 30px;
+      background: #f8f9fa;
+      border-bottom: 1px solid #dee2e6;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      background: #1a1a2e;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    button:hover { background: #e94560; transform: scale(1.05); }
+    button:active { transform: scale(0.95); }
+    #canvas-container {
+      position: relative;
+      width: 100%;
+      height: calc(100vh - 140px);
+      overflow: auto;
+      background: #fafafa;
+    }
+    svg {
+      display: block;
+      background: white;
+      margin: 20px auto;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    .module { fill: #1a1a2e; stroke: #16213e; stroke-width: 2; }
+    .module-header { fill: #0f3460; }
+    .func { fill: #16213e; stroke: #e94560; stroke-width: 2; }
+    .struct { fill: #16213e; stroke: #0f3460; stroke-width: 2; }
+    .test { fill: #16213e; stroke: #533483; stroke-width: 2; }
+    .scene-box { fill: #f0f4f8; stroke: #3d5a80; stroke-width: 2; }
+    .object { fill: #fff; stroke: #16213e; stroke-width: 2; }
+    .component { fill: #e94560; stroke: #1a1a2e; stroke-width: 2; }
+    .arrow { stroke: #16213e; stroke-width: 2; fill: none; }
+    .label { font-size: 12px; fill: #e0e0e0; }
+    .label-header { font-weight: 600; }
+    .label-title { font-weight: 500; }
+    .object-label { font-size: 14px; font-weight: 600; }
+    .object-sub { font-size: 10px; fill: #666; }
+    .title { font-size: 20px; font-weight: 600; fill: #16213e; }
+    .subtitle { font-size: 14px; font-weight: 500; fill: #16213e; }
+    .text-line { fill: #a0a0a0; font-size: 11px; }
+    .highlight { fill: #66fcf1; opacity: 0.2; }
+    .legend-box { fill: #f0f4f8; stroke: #ccc; }
+    .tooltip {
+      position: absolute;
+      background: rgba(26, 26, 46, 0.95);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      pointer-events: none;
+      z-index: 1000;
+      max-width: 280px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+      display: none;
+    }
+    .tooltip .title { color: #66fcf1; margin-bottom: 6px; }
+    .tooltip .code { 
+      background: rgba(0,0,0,0.3); 
+      padding: 8px; 
+      border-radius: 4px; 
+      font-family: 'Fira Code', monospace; 
+      font-size: 11px; 
+      margin-top: 6px;
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+    }
+    .legend { display: flex; gap: 20px; padding: 15px 30px; background: #fafafa; border-top: 1px solid #dee2e6; flex-wrap: wrap; }
+    .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666; }
+    .legend-color { width: 16px; height: 16px; border-radius: 4px; border: 1px solid #ddd; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Rust Bevy Graphics Module</h1>
+      <div class="subtitle">Module Structure &amp; 3D Scene Layout</div>
+    </header>
+    <div class="controls">
+      <button onclick="zoom(1.2)">🔍 +</button>
+      <button onclick="zoom(0.8)">🔍 −</button>
+      <button onclick="resetZoom()">↻ Reset</button>
+      <button onclick="toggleGrid()">📐 Toggle Grid</button>
+      <button onclick="toggleModules()">📦 Toggle Modules</button>
+      <button onclick="showCode()">💻 Show Code</button>
+    </div>
+    <div id="canvas-container">
+      <div id="tooltip" class="tooltip"></div>
+      <svg id="diagram" width="1400" height="950"></svg>
+    </div>
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-color" style="background:#1a1a2e; border:2px solid #16213e"></div>
+        <span>Module</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background:#e94560; border:2px solid #1a1a2e"></div>
+        <span>Component</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background:#fff; border:2px solid #16213e"></div>
+        <span>3D Object</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background:#e8f5e9; border:2px solid #66bb6a"></div>
+        <span>Click Event</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const svg = document.getElementById('diagram');
+    const tooltip = document.getElementById('tooltip');
+    
+    // Configuration
+    const width = 1400;
+    const height = 950;
+    const padding = 40;
+    
+    // Module data
+    const modules = {
+      main: {
+        x: 40, y: 70, width: 440, height: 190,
+        title: 'src/',
+        files: {
+          'main.rs': {
+            y: 95, height: 70,
+            content: ['mod graphics;', 'fn main() {', '  graphics::run(true);', '}']
+          }
+        }
+      },
+      graphics: {
+        x: 500, y: 70, width: 440, height: 190,
+        title: 'src/graphics/',
+        files: {
+          'mod.rs': {
+            y: 95, height: 70,
+            content: ['pub mod bevy;', 'pub use bevy::run;']
+          }
+        }
+      },
+      bevy: {
+        x: 960, y: 70, width: 300, height: 530,
+        title: 'bevy.rs',
+        sections: {
+          imports: { y: 95, height: 40, content: ['use bevy::prelude::*;', 'use std::sync::atomic::*;'] },
+          statics: { y: 145, height: 20, content: ['static TEST_MODE: AtomicBool'] },
+          tests: { y: 175, height: 90, content: ['#[cfg(test)] mod tests', '  test_test_mode_functions', '  test_run_with_test_mode'] },
+          run: { y: 285, height: 150, content: ['pub fn run(test_mode: bool)', '  if test_mode { enable_test_mode() }', '  App::new()', '    .add_plugins(DefaultPlugins)', '    .add_systems(Startup, setup)', '    .add_systems(Update, spin_cube)', '    .add_systems(Update, check_clicks)', '    .add_systems(Update, handle_clicks)', '    .run();'] },
+          struct: { y: 450, height: 140, content: ['struct Clicked', '  entity: Vec3,', '  position: Vec3,', '  min_pos: Vec3,', '  max_pos: Vec3,', '  center: Vec3,', '  size: Vec3,', '  color_handle: Handle<Material>'] },
+          systems: { y: 605, height: 160, content: ['System Functions', '  setup() - spawn objects', '  spin_cube() - rotation', '  check_clicks() - raycast', '  handle_clicks() - update'] }
+        }
+      }
+    };
+    
+    // Scene data
+    const scene = {
+      camera: { x: 1000, y: 350, width: 140, height: 45, title: 'Camera3d', pos: '(0, 0, 5)', looking_at: '(0, 0, 0)' },
+      cube: { x: 520, y: 350, width: 100, height: 100, title: 'Cube', color: 'blue', pos: '(0, 0, 0)', spinning: true },
+      sphere: { x: 440, y: 430, r: 35, title: 'Sphere', color: 'red', pos: '(-2, 0, 1)' },
+      cylinder: { x: 660, y: 400, width: 70, height: 90, title: 'Cylinder', color: 'green', pos: '(2, 0, 0)' },
+      torus: { x: 570, y: 510, rx: 40, ry: 25, title: 'Torus', color: 'yellow', pos: '(0, 1.5, 0)' },
+      plane: { x: 200, y: 540, width: 220, height: 15, title: 'Plane', color: 'yellow', pos: '(0, -2, 0)' },
+      lights: [
+        { x: 140, y: 350, width: 180, height: 35, title: 'AmbientLight', brightness: '500' },
+        { x: 140, y: 400, width: 180, height: 35, title: 'DirectionalLight', pos: '(5, 5, 5)' }
+      ]
+    };
+    
+    // Click detection info
+    const clickInfo = {
+      title: 'Click Detection',
+      steps: [
+        '1. Spawn Clicked component',
+        '2. Store bounds (min/max positions)',
+        '3. Print color & position'
+      ],
+      bounds: [
+        'position: transform.translation',
+        'min_pos: position - (0.5, 0.5, 0.5)',
+        'max_pos: position + (0.5, 0.5, 0.5)'
+      ]
+    };
+    
+    let scale = 1;
+    let offsetX = 0;
+    let offsetY = 0;
+    let isDragging = false;
+    let lastX = 0, lastY = 0;
+    let showGrid = false;
+    let showModules = true;
+    
+    function draw() {
+      // Clear
+      svg.innerHTML = '';
+      
+      // Background
+      const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      bg.setAttribute('width', width);
+      bg.setAttribute('height', height);
+      bg.setAttribute('fill', '#ffffff');
+      svg.appendChild(bg);
+      
+      // Title
+      const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      title.setAttribute('x', width/2);
+      title.setAttribute('y', 35);
+      title.setAttribute('text-anchor', 'middle');
+      title.setAttribute('class', 'title');
+      title.textContent = 'Rust Bevy Graphics Module';
+      svg.appendChild(title);
+      
+      const subtitle = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      subtitle.setAttribute('x', width/2);
+      subtitle.setAttribute('y', 55);
+      subtitle.setAttribute('text-anchor', 'middle');
+      subtitle.setAttribute('class', 'subtitle');
+      subtitle.textContent = 'Module Structure & 3D Scene Layout';
+      svg.appendChild(subtitle);
+      
+      // Draw modules
+      if (showModules) {
+        Object.values(modules).forEach(mod => {
+          // Module box
+          const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rect.setAttribute('x', mod.x);
+          rect.setAttribute('y', mod.y);
+          rect.setAttribute('width', mod.width);
+          rect.setAttribute('height', mod.height);
+          rect.setAttribute('class', 'module');
+          rect.setAttribute('rx', '10');
+          rect.setAttribute('ry', '10');
+          rect.addEventListener('mouseenter', (e) => showTooltip(e, `Module: ${mod.title}`));
+          rect.addEventListener('mouseleave', hideTooltip);
+          svg.appendChild(rect);
+          
+          // Module header
+          const header = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          header.setAttribute('x', mod.x);
+          header.setAttribute('y', mod.y);
+          header.setAttribute('width', mod.width);
+          header.setAttribute('height', 30);
+          header.setAttribute('class', 'module-header');
+          header.setAttribute('rx', '10');
+          header.setAttribute('ry', '10');
+          svg.appendChild(header);
+          
+          // Module title
+          const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          title.setAttribute('x', mod.x + 15);
+          title.setAttribute('y', mod.y + 22);
+          title.setAttribute('class', 'label label-header');
+          title.textContent = mod.title;
+          svg.appendChild(title);
+          
+          // Files/sections
+          Object.entries(mod.files).forEach(([filename, fileData]) => {
+            const fileBox = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            fileBox.setAttribute('x', mod.x + 10);
+            fileBox.setAttribute('y', mod.y + fileData.y);
+            fileBox.setAttribute('width', mod.width - 20);
+            fileBox.setAttribute('height', fileData.height);
+            fileBox.setAttribute('class', 'module');
+            fileBox.setAttribute('rx', '5');
+            fileBox.setAttribute('ry', '5');
+            svg.appendChild(fileBox);
+            
+            const filenameText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            filenameText.setAttribute('x', mod.x + 20);
+            filenameText.setAttribute('y', mod.y + fileData.y + 14);
+            filenameText.setAttribute('class', 'label label-header');
+            filenameText.textContent = filename;
+            svg.appendChild(filenameText);
+            
+            fileData.content.forEach((line, i) => {
+              const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+              text.setAttribute('x', mod.x + 10);
+              text.setAttribute('y', mod.y + fileData.y + 25 + i * 15);
+              text.setAttribute('class', 'text-line');
+              text.textContent = line;
+              svg.appendChild(text);
+            });
+          });
+          
+          Object.entries(mod.sections).forEach(([section, sectionData]) => {
+            const sectionBox = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            sectionBox.setAttribute('x', mod.x + 10);
+            sectionBox.setAttribute('y', mod.y + sectionData.y);
+            sectionBox.setAttribute('width', mod.width - 20);
+            sectionBox.setAttribute('height', sectionData.height);
+            sectionBox.setAttribute('class', 'func');
+            sectionBox.setAttribute('rx', '5');
+            sectionBox.setAttribute('ry', '5');
+            svg.appendChild(sectionBox);
+            
+            sectionData.content.forEach((line, i) => {
+              const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+              text.setAttribute('x', mod.x + 10);
+              text.setAttribute('y', mod.y + sectionData.y + 20 + i * 15);
+              text.setAttribute('class', 'text-line');
+              text.textContent = line;
+              svg.appendChild(text);
+            });
+          });
+        });
+      }
+      
+      // Connection arrows
+      const arrowMarker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+      arrowMarker.setAttribute('id', 'arrowhead');
+      arrowMarker.setAttribute('markerWidth', '12');
+      arrowMarker.setAttribute('markerHeight', '8');
+      arrowMarker.setAttribute('refX', '11');
+      arrowMarker.setAttribute('refY', '4');
+      arrowMarker.setAttribute('orient', 'auto');
+      const arrowPoly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      arrowPoly.setAttribute('points', '0 0, 12 4, 0 8');
+      arrowPoly.setAttribute('fill', '#16213e');
+      arrowMarker.appendChild(arrowPoly);
+      svg.appendChild(arrowMarker);
+      
+      const arrow1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      arrow1.setAttribute('x1', 440);
+      arrow1.setAttribute('y1', 155);
+      arrow1.setAttribute('x2', 500);
+      arrow1.setAttribute('y2', 155);
+      arrow1.setAttribute('class', 'arrow');
+      arrow1.setAttribute('marker-end', 'url(#arrowhead)');
+      svg.appendChild(arrow1);
+      
+      const arrow2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      arrow2.setAttribute('x1', 900);
+      arrow2.setAttribute('y1', 155);
+      arrow2.setAttribute('x2', 960);
+      arrow2.setAttribute('y2', 155);
+      arrow2.setAttribute('class', 'arrow');
+      arrow2.setAttribute('marker-end', 'url(#arrowhead)');
+      svg.appendChild(arrow2);
+      
+      // 3D Scene
+      const sceneBox = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      sceneBox.setAttribute('x', 120);
+      sceneBox.setAttribute('y', 280);
+      sceneBox.setAttribute('width', 900);
+      sceneBox.setAttribute('height', 540);
+      sceneBox.setAttribute('class', 'scene-box');
+      sceneBox.setAttribute('rx', '12');
+      sceneBox.setAttribute('ry', '12');
+      sceneBox.addEventListener('mouseenter', (e) => showTooltip(e, '3D Scene - Objects spawned in setup()'));
+      sceneBox.addEventListener('mouseleave', hideTooltip);
+      svg.appendChild(sceneBox);
+      
+      const sceneTitle = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sceneTitle.setAttribute('x', 150);
+      sceneTitle.setAttribute('y', 305);
+      sceneTitle.setAttribute('class', 'label');
+      sceneTitle.setAttribute('style', 'font-weight:600; font-size:16px');
+      sceneTitle.textContent = '3D Scene Objects';
+      svg.appendChild(sceneTitle);
+      
+      const sceneSubtitle = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sceneSubtitle.setAttribute('x', 150);
+      sceneSubtitle.setAttribute('y', 320);
+      sceneSubtitle.setAttribute('class', 'label');
+      sceneSubtitle.setAttribute('style', 'font-size:11px; fill:#666');
+      sceneSubtitle.textContent = 'Objects spawned in setup() function';
+      svg.appendChild(sceneSubtitle);
+      
+      // Draw scene objects
+      [scene.camera, scene.cube, scene.sphere, scene.cylinder, scene.torus, ...scene.lights].forEach(obj => {
+        if (obj.x && obj.y) {
+          const el = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          el.setAttribute('x', obj.x);
+          el.setAttribute('y', obj.y);
+          el.setAttribute('width', obj.width);
+          el.setAttribute('height', obj.height);
+          el.setAttribute('class', 'component');
+          el.setAttribute('rx', '8');
+          el.setAttribute('ry', '8');
+          el.addEventListener('mouseenter', (e) => showTooltip(e, obj.title));
+          el.addEventListener('mouseleave', hideTooltip);
+          svg.appendChild(el);
+          
+          const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          title.setAttribute('x', obj.x + obj.width/2);
+          title.setAttribute('y', obj.y + obj.height/2 - 5);
+          title.setAttribute('text-anchor', 'middle');
+          title.setAttribute('class', 'label');
+          title.setAttribute('style', 'font-weight:600');
+          title.textContent = obj.title;
+          svg.appendChild(title);
+          
+          const pos = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          pos.setAttribute('x', obj.x + obj.width/2);
+          pos.setAttribute('y', obj.y + obj.height/2 + 8);
+          pos.setAttribute('text-anchor', 'middle');
+          pos.setAttribute('class', 'label');
+          pos.setAttribute('style', 'font-size:10px; fill:#666');
+          pos.textContent = obj.pos || obj.looking_at || obj.brightness;
+          svg.appendChild(pos);
+        }
+      });
+      
+      // 3D Objects
+      drawCube();
+      drawSphere();
+      drawCylinder();
+      drawTorus();
+      drawPlane();
+      
+      // Click detection section
+      const clickSection = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      clickSection.setAttribute('x', 120);
+      clickSection.setAttribute('y', 600);
+      clickSection.setAttribute('width', 900);
+      clickSection.setAttribute('height', 180);
+      clickSection.setAttribute('class', 'scene-box');
+      clickSection.setAttribute('rx', '12');
+      clickSection.setAttribute('ry', '12');
+      clickSection.addEventListener('mouseenter', (e) => showTooltip(e, clickInfo.title));
+      clickSection.addEventListener('mouseleave', hideTooltip);
+      svg.appendChild(clickSection);
+      
+      const clickTitle = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      clickTitle.setAttribute('x', 150);
+      clickTitle.setAttribute('y', 625);
+      clickTitle.setAttribute('class', 'label');
+      clickTitle.setAttribute('style', 'font-weight:600; font-size:16px');
+      clickTitle.textContent = 'Click Detection (Test Mode Only)';
+      svg.appendChild(clickTitle);
+      
+      // Click steps
+      const steps = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      steps.setAttribute('x', 140);
+      steps.setAttribute('y', 635);
+      steps.setAttribute('width', 520);
+      steps.setAttribute('height', 85);
+      steps.setAttribute('fill', '#e8f5e9');
+      steps.setAttribute('stroke', '#66bb6a');
+      steps.setAttribute('stroke-width', '2');
+      steps.setAttribute('rx', '8');
+      steps.setAttribute('ry', '8');
+      svg.appendChild(steps);
+      
+      clickInfo.steps.forEach((step, i) => {
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', 150);
+        text.setAttribute('y', 650 + i * 15);
+        text.setAttribute('class', 'text-line');
+        text.textContent = step;
+        svg.appendChild(text);
+      });
+      
+      // Bounds info
+      const bounds = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      bounds.setAttribute('x', 680);
+      bounds.setAttribute('y', 635);
+      bounds.setAttribute('width', 360);
+      bounds.setAttribute('height', 85);
+      bounds.setAttribute('fill', '#fff3e0');
+      bounds.setAttribute('stroke', '#fb8c00');
+      bounds.setAttribute('stroke-width', '2');
+      bounds.setAttribute('rx', '8');
+      bounds.setAttribute('ry', '8');
+      svg.appendChild(bounds);
+      
+      clickInfo.bounds.forEach((bound, i) => {
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', 690);
+        text.setAttribute('y', 650 + i * 15);
+        text.setAttribute('class', 'text-line');
+        text.textContent = bound;
+        svg.appendChild(text);
+      });
+      
+      // Grid
+      if (showGrid) {
+        drawGrid();
+      }
+      
+      // Legend
+      const legend = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      legend.setAttribute('transform', `translate(${width - 150}, ${height - 80})`);
+      
+      const legendItems = [
+        { color: '#1a1a2e', stroke: '#16213e', strokeWidth: 2, label: 'Module' },
+        { color: '#e94560', stroke: '#1a1a2e', strokeWidth: 2, label: 'Component' },
+        { color: '#fff', stroke: '#16213e', strokeWidth: 2, label: '3D Object' },
+        { color: '#e8f5e9', stroke: '#66bb6a', strokeWidth: 2, label: 'Click Event' }
+      ];
+      
+      legendItems.forEach(item => {
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('width', 15);
+        rect.setAttribute('height', 10);
+        rect.setAttribute('fill', item.color);
+        rect.setAttribute('stroke', item.stroke);
+        rect.setAttribute('stroke-width', item.strokeWidth);
+        svg.appendChild(rect);
+        
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', 10);
+        text.setAttribute('y', 14);
+        text.setAttribute('class', 'label');
+        text.setAttribute('style', 'font-size:10px');
+        text.textContent = item.label;
+        svg.appendChild(text);
+      });
+      
+      // Apply transform
+      svg.style.transform = `scale(${scale})`;
+      svg.style.transformOrigin = 'center center';
+      svg.style.width = `${width}px`;
+      svg.style.height = `${height}px`;
+    }
+    
+    function drawCube() {
+      const cube = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      cube.setAttribute('x', scene.cube.x);
+      cube.setAttribute('y', scene.cube.y);
+      cube.setAttribute('width', scene.cube.width);
+      cube.setAttribute('height', scene.cube.height);
+      cube.setAttribute('class', 'object');
+      cube.setAttribute('rx', '12');
+      cube.setAttribute('ry', '12');
+      cube.addEventListener('mouseenter', (e) => showTooltip(e, scene.cube.title, [
+        `Color: ${scene.cube.color}`,
+        `Position: ${scene.cube.pos}`,
+        scene.cube.spinning ? '⬅ Spinning ⬅' : '',
+        'System: spin_cube() (Update)'
+      ]));
+      cube.addEventListener('mouseleave', hideTooltip);
+      svg.appendChild(cube);
+      
+      // Highlight effect
+      const highlight = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      highlight.setAttribute('x', scene.cube.x);
+      highlight.setAttribute('y', scene.cube.y);
+      highlight.setAttribute('width', scene.cube.width);
+      highlight.setAttribute('height', scene.cube.height);
+      highlight.setAttribute('class', 'highlight');
+      svg.appendChild(highlight);
+      
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', scene.cube.x + scene.cube.width/2);
+      label.setAttribute('y', scene.cube.y - 8);
+      label.setAttribute('text-anchor', 'middle');
+      label.setAttribute('class', 'label object-label');
+      label.textContent = scene.cube.title;
+      svg.appendChild(label);
+      
+      const sub1 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sub1.setAttribute('x', scene.cube.x + scene.cube.width/2);
+      sub1.setAttribute('y', scene.cube.y + scene.cube.height/2 - 5);
+      sub1.setAttribute('text-anchor', 'middle');
+      sub1.setAttribute('class', 'label object-sub');
+      sub1.textContent = `${scene.cube.color}`;
+      svg.appendChild(sub1);
+      
+      const sub2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sub2.setAttribute('x', scene.cube.x + scene.cube.width/2);
+      sub2.setAttribute('y', scene.cube.y + scene.cube.height/2 + 8);
+      sub2.setAttribute('text-anchor', 'middle');
+      sub2.setAttribute('class', 'label object-sub');
+      sub2.textContent = scene.cube.pos;
+      svg.appendChild(sub2);
+      
+      const sub3 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sub3.setAttribute('x', scene.cube.x + scene.cube.width/2);
+      sub3.setAttribute('y', scene.cube.y + scene.cube.height/2 + 25);
+      sub3.setAttribute('text-anchor', 'middle');
+      sub3.setAttribute('class', 'label object-sub');
+      sub3.textContent = scene.cube.spinning ? '⬅ spinning ⬅' : '';
+      svg.appendChild(sub3);
+    }
+    
+    function drawSphere() {
+      const sphere = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      sphere.setAttribute('cx', scene.sphere.x);
+      sphere.setAttribute('cy', scene.sphere.y);
+      sphere.setAttribute('r', scene.sphere.r);
+      sphere.setAttribute('class', 'object');
+      sphere.setAttribute('fill', '#ffebee');
+      sphere.addEventListener('mouseenter', (e) => showTooltip(e, scene.sphere.title, [
+        `Color: ${scene.sphere.color}`,
+        `Position: ${scene.sphere.pos}`,
+        'System: setup() (Startup)'
+      ]));
+      sphere.addEventListener('mouseleave', hideTooltip);
+      svg.appendChild(sphere);
+      
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', scene.sphere.x);
+      label.setAttribute('y', scene.sphere.y + scene.sphere.r + 5);
+      label.setAttribute('text-anchor', 'middle');
+      label.setAttribute('class', 'label object-label');
+      label.textContent = scene.sphere.title;
+      svg.appendChild(label);
+      
+      const sub1 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sub1.setAttribute('x', scene.sphere.x);
+      sub1.setAttribute('y', scene.sphere.y + scene.sphere.r + 18);
+      sub1.setAttribute('text-anchor', 'middle');
+      sub1.setAttribute('class', 'label object-sub');
+      sub1.textContent = scene.sphere.color;
+      svg.appendChild(sub1);
+      
+      const sub2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sub2.setAttribute('x', scene.sphere.x);
+      sub2.setAttribute('y', scene.sphere.y + scene.sphere.r + 30);
+      sub2.setAttribute('text-anchor', 'middle');
+      sub2.setAttribute('class', 'label object-sub');
+      sub2.textContent = scene.sphere.pos;
+      svg.appendChild(sub2);
+    }
+    
+    function drawCylinder() {
+      const cylinder = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      cylinder.setAttribute('x', scene.cylinder.x);
+      cylinder.setAttribute('y', scene.cylinder.y);
+      cylinder.setAttribute('width', scene.cylinder.width);
+      cylinder.setAttribute('height', scene.cylinder.height);
+      cylinder.setAttribute('class', 'object');
+      cylinder.setAttribute('rx', '5');
+      cylinder.setAttribute('ry', '5');
+      cylinder.addEventListener('mouseenter', (e) => showTooltip(e, scene.cylinder.title, [
+        `Color: ${scene.cylinder.color}`,
+        `Position: ${scene.cylinder.pos}`,
+        'System: setup() (Startup)'
+      ]));
+      cylinder.addEventListener('mouseleave', hideTooltip);
+      svg.appendChild(cylinder);
+      
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', scene.cylinder.x + scene.cylinder.width/2);
+      label.setAttribute('y', scene.cylinder.y + scene.cylinder.height/2 - 5);
+      label.setAttribute('text-anchor', 'middle');
+      label.setAttribute('class', 'label object-label');
+      label.textContent = scene.cylinder.title;
+      svg.appendChild(label);
+      
+      const sub1 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sub1.setAttribute('x', scene.cylinder.x + scene.cylinder.width/2);
+      sub1.setAttribute('y', scene.cylinder.y + scene.cylinder.height/2 + 8);
+      sub1.setAttribute('text-anchor', 'middle');
+      sub1.setAttribute('class', 'label object-sub');
+      sub1.textContent = scene.cylinder.color;
+      svg.appendChild(sub1);
+      
+      const sub2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sub2.setAttribute('x', scene.cylinder.x + scene.cylinder.width/2);
+      sub2.setAttribute('y', scene.cylinder.y + scene.cylinder.height/2 + 25);
+      sub2.setAttribute('text-anchor', 'middle');
+      sub2.setAttribute('class', 'label object-sub');
+      sub2.textContent = scene.cylinder.pos;
+      svg.appendChild(sub2);
+    }
+    
+    function drawTorus() {
+      const torus = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+      torus.setAttribute('cx', scene.torus.x);
+      torus.setAttribute('cy', scene.torus.y);
+      torus.setAttribute('rx', scene.torus.rx);
+      torus.setAttribute('ry', scene.torus.ry);
+      torus.setAttribute('class', 'object');
+      torus.setAttribute('fill', '#fffde7');
+      torus.addEventListener('mouseenter', (e) => showTooltip(e, scene.torus.title, [
+        `Color: ${scene.torus.color}`,
+        `Position: ${scene.torus.pos}`,
+        'System: setup() (Startup)'
+      ]));
+      torus.addEventListener('mouseleave', hideTooltip);
+      svg.appendChild(torus);
+      
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', scene.torus.x);
+      label.setAttribute('y', scene.torus.y - scene.torus.ry - 5);
+      label.setAttribute('text-anchor', 'middle');
+      label.setAttribute('class', 'label object-label');
+      label.textContent = scene.torus.title;
+      svg.appendChild(label);
+      
+      const sub1 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sub1.setAttribute('x', scene.torus.x);
+      sub1.setAttribute('y', scene.torus.y - scene.torus.ry + 8);
+      sub1.setAttribute('text-anchor', 'middle');
+      sub1.setAttribute('class', 'label object-sub');
+      sub1.textContent = scene.torus.color;
+      svg.appendChild(sub1);
+      
+      const sub2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sub2.setAttribute('x', scene.torus.x);
+      sub2.setAttribute('y', scene.torus.y - scene.torus.ry + 25);
+      sub2.setAttribute('text-anchor', 'middle');
+      sub2.setAttribute('class', 'label object-sub');
+      sub2.textContent = scene.torus.pos;
+      svg.appendChild(sub2);
+    }
+    
+    function drawPlane() {
+      const plane = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      plane.setAttribute('x', scene.plane.x);
+      plane.setAttribute('y', scene.plane.y);
+      plane.setAttribute('width', scene.plane.width);
+      plane.setAttribute('height', scene.plane.height);
+      plane.setAttribute('class', 'object');
+      plane.setAttribute('fill', '#fffde7');
+      plane.setAttribute('stroke', '#f9a825');
+      plane.setAttribute('stroke-width', '2');
+      plane.addEventListener('mouseenter', (e) => showTooltip(e, scene.plane.title, [
+        `Color: ${scene.plane.color}`,
+        `Position: ${scene.plane.pos}`,
+        'System: setup() (Startup)'
+      ]));
+      plane.addEventListener('mouseleave', hideTooltip);
+      svg.appendChild(plane);
+      
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', scene.plane.x + scene.plane.width/2);
+      label.setAttribute('y', scene.plane.y + scene.plane.height/2 + 3);
+      label.setAttribute('text-anchor', 'middle');
+      label.setAttribute('style', 'font-size:11px; fill:#fbc02d');
+      label.textContent = scene.plane.title;
+      svg.appendChild(label);
+      
+      const sub1 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sub1.setAttribute('x', scene.plane.x + scene.plane.width/2);
+      sub1.setAttribute('y', scene.plane.y + scene.plane.height/2 + 18);
+      sub1.setAttribute('text-anchor', 'middle');
+      sub1.setAttribute('class', 'label object-sub');
+      sub1.textContent = scene.plane.pos;
+      svg.appendChild(sub1);
+    }
+    
+    function drawGrid() {
+      const gridSize = 20;
+      const startX = 120;
+      const startY = 280;
+      const endX = 1020;
+      const endY = 820;
+      
+      for (let x = startX; x <= endX; x += gridSize) {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', x);
+        line.setAttribute('y1', startY);
+        line.setAttribute('x2', x);
+        line.setAttribute('y2', endY);
+        line.setAttribute('stroke', '#e0e0e0');
+        line.setAttribute('stroke-width', '0.5');
+        svg.appendChild(line);
+      }
+      
+      for (let y = startY; y <= endY; y += gridSize) {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', startX);
+        line.setAttribute('y1', y);
+        line.setAttribute('x2', endX);
+        line.setAttribute('y2', y);
+        line.setAttribute('stroke', '#e0e0e0');
+        line.setAttribute('stroke-width', '0.5');
+        svg.appendChild(line);
+      }
+    }
+    
+    function showTooltip(e, title, details = null) {
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 15) + 'px';
+      tooltip.style.top = (e.clientY + 15) + 'px';
+      
+      let content = `<div class="title">${title}</div>`;
+      if (details) {
+        content += details.map(d => `<div class="code">${d || ''}</div>`).join('');
+      }
+      tooltip.innerHTML = content;
+    }
+    
+    function hideTooltip() {
+      tooltip.style.display = 'none';
+    }
+    
+    function zoom(factor) {
+      scale *= factor;
+      draw();
+    }
+    
+    function resetZoom() {
+      scale = 1;
+      offsetX = 0;
+      offsetY = 0;
+      draw();
+    }
+    
+    function toggleGrid() {
+      showGrid = !showGrid;
+      draw();
+    }
+    
+    function toggleModules() {
+      showModules = !showModules;
+      draw();
+    }
+    
+    function showCode() {
+      const code = `
+src/main.rs:
+  mod graphics;
+  fn main() {
+    graphics::run(true);
+  }
+
+src/graphics/mod.rs:
+  pub mod bevy;
+  pub use bevy::run;
+
+src/graphics/bevy.rs:
+  static TEST_MODE: AtomicBool
+  
+  #[cfg(test)] mod tests
+    test_test_mode_functions
+    test_run_with_test_mode
+  
+  pub fn run(test_mode: bool)
+    App::new()
+      .add_plugins(DefaultPlugins)
+      .add_systems(Startup, setup)
+      .add_systems(Update, spin_cube)
+      .add_systems(Update, check_clicks)
+      .add_systems(Update, handle_clicks)
+      .run();
+  
+  struct Clicked
+    entity: Vec3,
+    position: Vec3,
+    min_pos: Vec3,
+    max_pos: Vec3,
+    center: Vec3,
+    size: Vec3,
+    color_handle: Handle<Material>
+`;
+      alert(code);
+    }
+    
+    // Mouse drag
+    svg.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      svg.style.cursor = 'grabbing';
+    });
+    
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) {
+        tooltip.style.left = (e.clientX + 15) + 'px';
+        tooltip.style.top = (e.clientY + 15) + 'px';
+      }
+    });
+    
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+      svg.style.cursor = 'default';
+    });
+    
+    // Touch support
+    svg.addEventListener('touchstart', (e) => {
+      isDragging = true;
+      lastX = e.touches[0].clientX;
+      lastY = e.touches[0].clientY;
+    });
+    
+    window.addEventListener('touchmove', (e) => {
+      if (isDragging) {
+        const dx = e.touches[0].clientX - lastX;
+        const dy = e.touches[0].clientY - lastY;
+        offsetX += dx;
+        offsetY += dy;
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+        svg.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+      }
+    });
+    
+    window.addEventListener('touchend', () => {
+      isDragging = false;
+    });
+    
+    // Resize
+    window.addEventListener('resize', () => {
+      const container = document.getElementById('canvas-container');
+      svg.style.maxWidth = '100%';
+    });
+    
+    // Initial draw
+    draw();
+  </script>
+</body>
+</html>

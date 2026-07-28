@@ -1,1 +1,35 @@
+# Compiled output
+/target/
+
+# Cargo lock (keep for binaries, optional for libraries)
+# Cargo.lock
+
+# OS files
+.DS_Store
+Thumbs.db
+*~
+
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.*
+
+# Rust analyzer
+.rust-analyzer/
+
+# Coverage / profiling
+*.prof*
+*.gc*
+
+# Temporary files
+tmp/
+temp/
+scene.json
+scene.json.bak
+
+scene.json.bak3
 .aider*
+Apollo Soyuz.glb

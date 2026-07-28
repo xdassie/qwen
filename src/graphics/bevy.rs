@@ -1,33 +1,82 @@
 use bevy::prelude::*;
+use bevy::render::view::window::screenshot::{save_to_disk, Screenshot};
+use bevy::gltf::GltfAssetLabel;
+use std::env;
 
-pub fn run() {
+#[derive(Resource, Default)]
+pub struct TestMode(pub bool);
+
+#[derive(Resource, Default)]
+pub struct TestModeExit(pub bool);
+
+#[derive(Resource, Default)]
+pub struct CaptureTimer(Timer);
+
+#[derive(Resource, Default)]
+pub struct GlbLoadingState {
+    pub loading: bool,
+    pub loaded: bool,
+    pub error: Option<String>,
+    pub scene_handle: Handle<Scene>,
+}
+
+pub fn get_model_path() -> String {
+    let args: Vec<String> = env::args().collect();
+    for (i, arg) in args.iter().enumerate() {
+        if arg.starts_with("--model=") {
+            return arg.trim_start_matches("--model=").to_string();
+        } else if arg == "--model" && i + 1 < args.len() {
+            return args[i + 1].clone();
+        }
+    }
+    String::new()
+}
+
+pub fn run(test_mode: bool) {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Bevy! Spinning Cube".into(),
-                resolution: (800, 600).into(),
+        .add_plugins(DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: if test_mode { "Bevy Test Mode" } else { "Bevy! GLB Loader" }.into(),
+                    resolution: (800, 600).into(),
+                    visible: test_mode,
+                    ..default()
+                }),
                 ..default()
-            }),
-            ..default()
-        }))
+            })
+            .set(AssetPlugin {
+                unapproved_path_mode: bevy::asset::UnapprovedPathMode::Allow,
+                ..default()
+            })
+        )
+        .init_resource::<TestMode>()
+        .init_resource::<TestModeExit>()
+        .init_resource::<CaptureTimer>()
+        .init_resource::<GlbLoadingState>()
+        .insert_resource(TestMode(test_mode))
+        .insert_resource(CaptureTimer(Timer::from_seconds(1.0, TimerMode::Repeating)))
         .add_systems(Startup, setup)
-        .add_systems(Update, spin_cube)
+        .add_systems(Startup, load_glb)
+        .add_systems(Update, (
+            on_glb_loaded,
+            spin_model,
+            spawn_screenshot,
+            check_screenshot,
+        ))
         .run();
 }
 
 fn setup(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    _meshes: Res<Assets<Mesh>>,
+    _materials: Res<Assets<StandardMaterial>>,
 ) {
-    // Add ambient light for base visibility
     commands.spawn(AmbientLight {
         color: Color::srgb(0.5, 0.5, 0.5),
         brightness: 500.0,
         ..default()
     });
 
-    // Add directional light
     commands.spawn((
         DirectionalLight {
             color: Color::WHITE,
@@ -38,27 +87,106 @@ fn setup(
         Transform::from_xyz(5.0, 5.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
-    // Spawn the cube
     commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(Color::srgb(0.3, 0.5, 0.8))),
-        Transform::from_xyz(0.0, 0.0, 0.0),
-    ));
-
-    // Add camera with proper 3D configuration
-    commands.spawn((
-        Camera3d {
-            ..default()
-        },
+        Camera3d { ..default() },
         Transform::from_xyz(0.0, 0.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 }
 
-fn spin_cube(
-    time: Res<Time>,
-    mut cube_query: Query<&mut Transform, With<Mesh3d>>,
+fn load_glb(
+    asset_server: Res<AssetServer>,
+    mut state: ResMut<GlbLoadingState>,
+    _test_mode: Res<TestMode>,
 ) {
-    for mut transform in cube_query.iter_mut() {
+    let model_path = get_model_path();
+    
+    if model_path.is_empty() {
+        state.loading = false;
+        state.loaded = false;
+        state.error = None;
+        state.scene_handle = Default::default();
+        return;
+    }
+    
+    state.loading = true;
+    state.loaded = false;
+    state.error = None;
+    state.scene_handle = Default::default();
+    
+    let scene_handle = asset_server.load(
+        GltfAssetLabel::Scene(0).from_asset(model_path)
+    );
+    
+    state.scene_handle = scene_handle;
+}
+
+fn on_glb_loaded(
+    _asset_server: Res<AssetServer>,
+    scenes: Res<Assets<Scene>>,
+    mut state: ResMut<GlbLoadingState>,
+    mut commands: Commands,
+) {
+    if state.loading && !state.loaded {
+        return;
+    }
+    
+    let scene_opt = scenes.get(&state.scene_handle);
+    if scene_opt.is_none() {
+        state.loaded = false;
+        state.error = Some("Scene not found in assets".to_string());
+        return;
+    }
+    
+    state.loading = false;
+    state.loaded = true;
+    state.error = None;
+    
+    commands.spawn((
+        SceneRoot(state.scene_handle.clone()),
+        Transform::default(),
+    ));
+}
+
+fn spin_model(
+    time: Res<Time>,
+    mut model_query: Query<&mut Transform, With<SceneRoot>>,
+) {
+    for mut transform in model_query.iter_mut() {
         transform.rotate_z(time.delta_secs() * 2.0);
     }
+}
+
+fn spawn_screenshot(
+    time: Res<Time>,
+    mut commands: Commands,
+    test_mode: Res<TestMode>,
+    mut capture_timer: ResMut<CaptureTimer>,
+    mut test_mode_exit: ResMut<TestModeExit>,
+) {
+    if !test_mode.0 {
+        return;
+    }
+    
+    if test_mode_exit.0 {
+        return;
+    }
+    
+    capture_timer.0.tick(time.delta());
+    if capture_timer.0.just_finished() {
+        commands.spawn(Screenshot::primary_window()).observe(save_to_disk("screenshot.png"));
+        test_mode_exit.0 = true;
+        capture_timer.0 = Timer::from_seconds(0.0, TimerMode::Repeating);
+    }
+}
+
+fn check_screenshot(
+    screenshot_entity: Query<Entity, With<Screenshot>>,
+    mut test_mode_exit: ResMut<TestModeExit>,
+    mut capture_timer: ResMut<CaptureTimer>,
+) {
+    if screenshot_entity.is_empty() {
+        return;
+    }
+    test_mode_exit.0 = true;
+    capture_timer.0 = Timer::from_seconds(0.0, TimerMode::Repeating);
 }

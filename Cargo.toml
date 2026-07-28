@@ -1,7 +1,27 @@
 [package]
 name = "bevy_hello_world"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
-bevy = "0.17"
+strum = "0.27"
+strum_macros = "0.27"
+reqwest = { version = "0.12", features = ["blocking"] }
+rodio = "0.21"
+dirs = "6.0"
+bevy = { version = "0.17", features = ["serialize", "bevy_picking", "bevy_core_pipeline", "bevy_gltf"] }
+pango = "0.21"
+cairo-rs = { version = "0.21", features = ["png"] }
+pangocairo = "0.21"
+image = "0.25"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+avian3d = { version = "0.4", features = ["serialize"] }
+rand = "0.10.0"
+uuid = { version = "1.22.0", features = ["v4", "serde"] }
+
+[profile.dev]
+opt-level = 3
+debug = 1
+debug-assertions = true
+overflow-checks = true
