@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 use bevy::render::view::window::screenshot::{save_to_disk, Screenshot};
-use bevy::render::camera::CameraRenderGraph;
 use bevy::gltf::GltfAssetLabel;
 use std::env;
+use std::fs;
 
 #[derive(Resource, Default)]
 pub struct TestMode(pub bool);
@@ -69,24 +69,12 @@ pub fn run(test_mode: bool) {
 
 fn setup(
     mut commands: Commands,
-    _meshes: Res<Assets<Mesh>>,
-    _materials: Res<Assets<StandardMaterial>>,
 ) {
-    commands.spawn((
-        Mesh3d(Handle::<Mesh>::default()),
-        MeshMaterial3d(Handle::<StandardMaterial>::default()),
-        AmbientLight {
-            color: Color::srgb(0.5, 0.5, 0.5),
-            brightness: 500.0,
-            ..default()
-        },
-    ));
-
     commands.spawn((
         DirectionalLight {
             color: Color::WHITE,
             illuminance: 1000.0,
-            shadows_enabled: false,
+            shadows_enabled: true,
             ..default()
         },
         Transform::from_xyz(5.0, 5.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
@@ -95,6 +83,16 @@ fn setup(
     commands.spawn((
         Camera3d { ..default() },
         Transform::from_xyz(0.0, 0.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
+
+    commands.spawn((
+        PointLight {
+            color: Color::WHITE,
+            intensity: 1000.0,
+            range: 50.0,
+            ..default()
+        },
+        Transform::from_xyz(0.0, 0.0, 0.0),
     ));
 }
 
@@ -118,41 +116,66 @@ fn load_glb(
     state.error = None;
     state.scene_handle = Default::default();
     
+    info!("Loading scene: {}", model_path);
+    
+    // Check if file exists before loading
+    if !fs::metadata(&model_path).is_ok() {
+        state.loading = false;
+        state.loaded = false;
+        state.error = Some(format!("Model file not found: {}", model_path));
+        error!("Failed to load model: {}", model_path);
+        return;
+    }
+    
     let scene_handle = asset_server.load(
         GltfAssetLabel::Scene(0).from_asset(model_path)
     );
     
-    state.scene_handle = scene_handle;
+    state.scene_handle = scene_handle.clone();
+    info!("Loaded asset handle: {:?}", scene_handle);
 }
 
 fn on_glb_loaded(
-    asset_server: Res<AssetServer>,
+    _asset_server: Res<AssetServer>,
     scenes: Res<Assets<Scene>>,
     mut state: ResMut<GltfLoadingState>,
     mut commands: Commands,
+    time: Res<Time>,
 ) {
-    info!("on_glb_loaded called - loading: {}, loaded: {}", state.loading, state.loaded);
     if state.loading && !state.loaded {
+        if time.elapsed_secs() > 10.0 {
+            state.error = Some("Scene loading timed out".to_string());
+            error!("Scene loading timed out: {:?}", state.scene_handle);
+            state.loading = false;
+        }
         return;
     }
     
+    //info!("Checking scene at {:?}", state.scene_handle);
+    
     let scene_opt = scenes.get(&state.scene_handle);
+    //info!("Scene found: {:?}", scene_opt.is_some());
+    
     if scene_opt.is_none() {
         state.loaded = false;
         state.error = Some("Scene not found in assets".to_string());
+        error!("Scene not found: {:?}", state.scene_handle);
         return;
     }
     
-    state.loading = false;
-    state.loaded = true;
-    state.error = None;
-    
-    let scene = scene_opt.unwrap();
-    commands.spawn((
-        SceneRoot(state.scene_handle.clone()),
-        Transform::default(),
-        Visibility::Visible,
-    ));
+    if !state.loaded {
+        state.loaded = true;
+        state.loading = false;
+        state.error = None;
+        
+        info!("Scene loaded successfully, spawning");
+        
+        commands.spawn((
+            SceneRoot(state.scene_handle.clone()),
+            Transform::default(),
+            Visibility::Visible,
+        ));
+    }
 }
 
 fn spin_model(
@@ -171,6 +194,7 @@ fn spawn_screenshot(
     mut capture_timer: ResMut<CaptureTimer>,
     mut test_mode_exit: ResMut<TestModeExit>,
     state: Res<GltfLoadingState>,
+    scene_query: Query<(Entity, &Visibility), With<SceneRoot>>,
 ) {
     if !test_mode.0 {
         return;
@@ -182,21 +206,47 @@ fn spawn_screenshot(
     
     capture_timer.0.tick(time.delta());
     if capture_timer.0.just_finished() {
-        info!("Taking screenshot - scene loaded: {}, handle: {:?}", state.loaded, state.scene_handle);
+        if !state.loaded {
+            error!("Cannot capture screenshot: model not loaded");
+            return;
+        }
+        
+        let scene_entity = scene_query.single().ok();
+        if scene_entity.is_none() {
+            error!("Cannot capture screenshot: scene root not found");
+            return;
+        }
+        
+        info!("Capturing screenshot");
         commands.spawn(Screenshot::primary_window()).observe(save_to_disk("screenshot.png"));
         test_mode_exit.0 = true;
         capture_timer.0 = Timer::from_seconds(0.0, TimerMode::Repeating);
+        
+        if test_mode.0 {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            std::process::exit(0);
+        }
     }
 }
 
 fn check_screenshot(
     screenshot_entity: Query<Entity, With<Screenshot>>,
+    mut commands: Commands,
     mut test_mode_exit: ResMut<TestModeExit>,
     mut capture_timer: ResMut<CaptureTimer>,
+    state: Res<GltfLoadingState>,
 ) {
     if screenshot_entity.is_empty() {
         return;
     }
+    
+    if !state.loaded {
+        commands.entity(screenshot_entity.single().unwrap()).insert(Visibility::Hidden);
+        return;
+    }
+    
+    info!("Screenshot saved to screenshot.png");
+    
     test_mode_exit.0 = true;
     capture_timer.0 = Timer::from_seconds(0.0, TimerMode::Repeating);
 }

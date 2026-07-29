@@ -37,7 +37,10 @@ BASE64_ESCAPED=$(echo -n "$BASE64_IMAGE" | sed 's/\\/\\\\/g; s/"/\\\"/g; s/\\t/\
 PROMPT_JSON='{"model": "Qwen2-VL-7B-Instruct-Q5_K_S.gguf", "messages": [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,'$BASE64_ESCAPED'"}}, {"type": "text", "text": "Describe this image. Focus ONLY on visual elements: colors, shapes, positions, orientations. Do not make any reasoning or comparisons. Report exactly what visual elements are present."}]}], "max_tokens": 512, "temperature": 0.1}'
 
 echo "Sending vision request to port ${VISION_PORT}..."
-RESPONSE=$(curl -s --max-time 60 -X POST "http://localhost:${VISION_PORT}/v1/chat/completions"     -H "Content-Type: application/json"     -d "$PROMPT_JSON")
+TMP_JSON=$(mktemp)
+echo "$PROMPT_JSON" > "$TMP_JSON"
+RESPONSE=$(curl -s --max-time 60 -X POST "http://localhost:${VISION_PORT}/v1/chat/completions"     -H "Content-Type: application/json"     -d @"$TMP_JSON")
+rm "$TMP_JSON"
 
 if [ $? -ne 0 ]; then
     echo "Error: Vision model not responding on port ${VISION_PORT}"
