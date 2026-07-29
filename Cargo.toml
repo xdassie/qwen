@@ -9,7 +9,7 @@ strum_macros = "0.27"
 reqwest = { version = "0.12", features = ["blocking"] }
 rodio = "0.21"
 dirs = "6.0"
-bevy = { version = "0.17", features = ["serialize", "bevy_picking", "bevy_core_pipeline", "bevy_gltf"] }
+bevy = { version = "0.17", features = ["serialize", "bevy_picking", "bevy_core_pipeline", "bevy_gltf","jpeg", "default_font"] }
 pango = "0.21"
 cairo-rs = { version = "0.21", features = ["png"] }
 pangocairo = "0.21"

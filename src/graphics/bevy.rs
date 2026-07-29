@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::render::view::window::screenshot::{save_to_disk, Screenshot};
+use bevy::render::camera::CameraRenderGraph;
 use bevy::gltf::GltfAssetLabel;
 use std::env;
 
@@ -13,7 +14,7 @@ pub struct TestModeExit(pub bool);
 pub struct CaptureTimer(Timer);
 
 #[derive(Resource, Default)]
-pub struct GlbLoadingState {
+pub struct GltfLoadingState {
     pub loading: bool,
     pub loaded: bool,
     pub error: Option<String>,
@@ -52,9 +53,9 @@ pub fn run(test_mode: bool) {
         .init_resource::<TestMode>()
         .init_resource::<TestModeExit>()
         .init_resource::<CaptureTimer>()
-        .init_resource::<GlbLoadingState>()
+        .init_resource::<GltfLoadingState>()
         .insert_resource(TestMode(test_mode))
-        .insert_resource(CaptureTimer(Timer::from_seconds(1.0, TimerMode::Repeating)))
+        .insert_resource(CaptureTimer(Timer::from_seconds(5.0, TimerMode::Repeating)))
         .add_systems(Startup, setup)
         .add_systems(Startup, load_glb)
         .add_systems(Update, (
@@ -71,11 +72,15 @@ fn setup(
     _meshes: Res<Assets<Mesh>>,
     _materials: Res<Assets<StandardMaterial>>,
 ) {
-    commands.spawn(AmbientLight {
-        color: Color::srgb(0.5, 0.5, 0.5),
-        brightness: 500.0,
-        ..default()
-    });
+    commands.spawn((
+        Mesh3d(Handle::<Mesh>::default()),
+        MeshMaterial3d(Handle::<StandardMaterial>::default()),
+        AmbientLight {
+            color: Color::srgb(0.5, 0.5, 0.5),
+            brightness: 500.0,
+            ..default()
+        },
+    ));
 
     commands.spawn((
         DirectionalLight {
@@ -95,7 +100,7 @@ fn setup(
 
 fn load_glb(
     asset_server: Res<AssetServer>,
-    mut state: ResMut<GlbLoadingState>,
+    mut state: ResMut<GltfLoadingState>,
     _test_mode: Res<TestMode>,
 ) {
     let model_path = get_model_path();
@@ -121,11 +126,12 @@ fn load_glb(
 }
 
 fn on_glb_loaded(
-    _asset_server: Res<AssetServer>,
+    asset_server: Res<AssetServer>,
     scenes: Res<Assets<Scene>>,
-    mut state: ResMut<GlbLoadingState>,
+    mut state: ResMut<GltfLoadingState>,
     mut commands: Commands,
 ) {
+    info!("on_glb_loaded called - loading: {}, loaded: {}", state.loading, state.loaded);
     if state.loading && !state.loaded {
         return;
     }
@@ -141,15 +147,17 @@ fn on_glb_loaded(
     state.loaded = true;
     state.error = None;
     
+    let scene = scene_opt.unwrap();
     commands.spawn((
         SceneRoot(state.scene_handle.clone()),
         Transform::default(),
+        Visibility::Visible,
     ));
 }
 
 fn spin_model(
     time: Res<Time>,
-    mut model_query: Query<&mut Transform, With<SceneRoot>>,
+    mut model_query: Query<&mut Transform, (With<SceneRoot>, Without<Camera3d>)>,
 ) {
     for mut transform in model_query.iter_mut() {
         transform.rotate_z(time.delta_secs() * 2.0);
@@ -162,6 +170,7 @@ fn spawn_screenshot(
     test_mode: Res<TestMode>,
     mut capture_timer: ResMut<CaptureTimer>,
     mut test_mode_exit: ResMut<TestModeExit>,
+    state: Res<GltfLoadingState>,
 ) {
     if !test_mode.0 {
         return;
@@ -173,6 +182,7 @@ fn spawn_screenshot(
     
     capture_timer.0.tick(time.delta());
     if capture_timer.0.just_finished() {
+        info!("Taking screenshot - scene loaded: {}, handle: {:?}", state.loaded, state.scene_handle);
         commands.spawn(Screenshot::primary_window()).observe(save_to_disk("screenshot.png"));
         test_mode_exit.0 = true;
         capture_timer.0 = Timer::from_seconds(0.0, TimerMode::Repeating);
