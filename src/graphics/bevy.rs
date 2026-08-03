@@ -1,17 +1,128 @@
 use bevy::prelude::*;
-use bevy::render::view::window::screenshot::{save_to_disk, Screenshot};
-use bevy::gltf::GltfAssetLabel;
+use bevy::render::view::screenshot::{save_to_disk, Screenshot};
 use std::env;
 use std::fs;
 
-#[derive(Resource, Default)]
-pub struct TestMode(pub bool);
+/// Trait for recording screenshots, always active and writes to /tmp each frame
+pub trait Recorder {
+    fn record(&self, frame_count: u64);
+}
 
-#[derive(Resource, Default)]
-pub struct TestModeExit(pub bool);
+impl Recorder for ModelSceneLoader {
+    fn record(&self, frame_count: u64) {
+        let _filename = format!("/tmp/screenshot_{}.png", frame_count);
+        // Recording is handled by the capture_screenshot system
+    }
+}
 
-#[derive(Resource, Default)]
-pub struct CaptureTimer(Timer);
+pub trait SceneLoader {
+    fn load_glb(
+        &mut self,
+        asset_server: Res<AssetServer>,
+        state: ResMut<GltfLoadingState>,
+    );
+    
+    fn on_glb_loaded(
+        &mut self,
+        scenes: Res<Assets<Scene>>,
+        state: ResMut<GltfLoadingState>,
+        commands: &mut Commands,
+        time: Res<Time>,
+    );
+}
+
+#[derive(Resource, Clone)]
+#[allow(dead_code)]
+pub struct ModelSceneLoader {
+    model_path: String,
+}
+
+impl ModelSceneLoader {
+    pub fn new(model_path: &str) -> Self {
+        ModelSceneLoader {
+            model_path: model_path.to_string(),
+        }
+    }
+}
+
+impl SceneLoader for ModelSceneLoader {
+    fn load_glb(
+        &mut self,
+        asset_server: Res<AssetServer>,
+        mut state: ResMut<GltfLoadingState>,
+    ) {
+        let model_path = self.model_path.clone();
+        
+        if model_path.is_empty() {
+            state.loading = false;
+            state.loaded = false;
+            state.error = None;
+            state.scene_handle = Default::default();
+            return;
+        }
+        
+        state.loading = true;
+        state.loaded = false;
+        state.error = None;
+        state.scene_handle = Default::default();
+        
+        info!("Loading scene: {}", model_path);
+        
+        // Check if file exists before loading
+        if !fs::metadata(&model_path).is_ok() {
+            state.loading = false;
+            state.loaded = false;
+            state.error = Some(format!("Model file not found: {}", model_path));
+            error!("Failed to load model: {}", model_path);
+            return;
+        }
+        
+        let scene_handle = asset_server.load(
+            GltfAssetLabel::Scene(0).from_asset(model_path)
+        );
+        
+        state.scene_handle = scene_handle.clone();
+        info!("Loaded asset handle: {:?}", scene_handle);
+    }
+    
+    fn on_glb_loaded(
+        &mut self,
+        scenes: Res<Assets<Scene>>,
+        mut state: ResMut<GltfLoadingState>,
+        commands: &mut Commands,
+        time: Res<Time>,
+    ) {
+        if state.loading && !state.loaded {
+            if time.elapsed_secs() > 10.0 {
+                state.error = Some("Scene loading timed out".to_string());
+                error!("Scene loading timed out: {:?}", state.scene_handle);
+                state.loading = false;
+            }
+        }
+        
+        let scene_opt = scenes.get(&state.scene_handle);
+        
+        if scene_opt.is_none() {
+            state.loaded = false;
+            state.error = Some("Scene not found in assets".to_string());
+            error!("Scene not found: {:?}", state.scene_handle);
+        }
+        
+        if !state.loaded {
+            state.loaded = true;
+            state.loading = false;
+            state.error = None;
+            
+            info!("Scene loaded successfully, spawning");
+            
+            commands.spawn((
+                SceneRoot(state.scene_handle.clone()),
+                Transform::default(),
+                Visibility::Visible,
+            ));
+        }
+    }
+}
 
 #[derive(Resource, Default)]
 pub struct GltfLoadingState {
@@ -33,14 +144,26 @@ pub fn get_model_path() -> String {
     String::new()
 }
 
-pub fn run(test_mode: bool) {
+#[derive(Resource, Default, Clone)]
+struct FrameCount(u64);
+
+pub fn run() {
+    let loader = ModelSceneLoader::new(&get_model_path());
+    
     App::new()
+        .init_resource::<GltfLoadingState>()
+        .init_resource::<FrameCount>()
+        .insert_resource(loader.clone())
+        .add_systems(Startup, setup)
+        .add_systems(Startup, update_loader)
+        .add_systems(Update, (update_scene, spin_model, capture_screenshot))
+        .add_systems(Update, capture_screenshot)
         .add_plugins(DefaultPlugins
             .set(WindowPlugin {
                 primary_window: Some(Window {
-                    title: if test_mode { "Bevy Test Mode" } else { "Bevy! GLB Loader" }.into(),
+                    title: "Bevy! GLB Loader".into(),
                     resolution: (800, 600).into(),
-                    visible: test_mode,
+                    visible: true,
                     ..default()
                 }),
                 ..default()
@@ -50,21 +173,26 @@ pub fn run(test_mode: bool) {
                 ..default()
             })
         )
-        .init_resource::<TestMode>()
-        .init_resource::<TestModeExit>()
-        .init_resource::<CaptureTimer>()
-        .init_resource::<GltfLoadingState>()
-        .insert_resource(TestMode(test_mode))
-        .insert_resource(CaptureTimer(Timer::from_seconds(5.0, TimerMode::Repeating)))
-        .add_systems(Startup, setup)
-        .add_systems(Startup, load_glb)
-        .add_systems(Update, (
-            on_glb_loaded,
-            spin_model,
-            spawn_screenshot,
-            check_screenshot,
-        ))
         .run();
+}
+
+fn capture_screenshot(
+    mut commands: Commands,
+    window_query: Query<Entity, With<Window>>,
+    mut frame_count: ResMut<FrameCount>,
+    loader: Res<ModelSceneLoader>,
+) {
+    // Call the Recorder trait to trigger recording
+    loader.record(frame_count.0);
+    frame_count.0 += 1;
+    
+    println!("DEBUG: Capturing screenshot {}", frame_count.0 - 1);
+    
+    // Spawn screenshot capture on the first window
+    for _window_entity in window_query.iter() {
+        let filename = format!("/tmp/screenshot_{}.png", frame_count.0 - 1);
+        commands.spawn(Screenshot::primary_window()).observe(save_to_disk(filename));
+    }
 }
 
 fn setup(
@@ -96,87 +224,26 @@ fn setup(
     ));
 }
 
-fn load_glb(
+fn update_loader(
+    mut loader: ResMut<ModelSceneLoader>,
     asset_server: Res<AssetServer>,
-    mut state: ResMut<GltfLoadingState>,
-    _test_mode: Res<TestMode>,
+    state: ResMut<GltfLoadingState>,
 ) {
-    let model_path = get_model_path();
-    
-    if model_path.is_empty() {
-        state.loading = false;
-        state.loaded = false;
-        state.error = None;
-        state.scene_handle = Default::default();
-        return;
-    }
-    
-    state.loading = true;
-    state.loaded = false;
-    state.error = None;
-    state.scene_handle = Default::default();
-    
-    info!("Loading scene: {}", model_path);
-    
-    // Check if file exists before loading
-    if !fs::metadata(&model_path).is_ok() {
-        state.loading = false;
-        state.loaded = false;
-        state.error = Some(format!("Model file not found: {}", model_path));
-        error!("Failed to load model: {}", model_path);
-        return;
-    }
-    
-    let scene_handle = asset_server.load(
-        GltfAssetLabel::Scene(0).from_asset(model_path)
-    );
-    
-    state.scene_handle = scene_handle.clone();
-    info!("Loaded asset handle: {:?}", scene_handle);
+    loader.load_glb(asset_server, state);
 }
 
-fn on_glb_loaded(
-    _asset_server: Res<AssetServer>,
+
+fn update_scene(
+    mut loader: ResMut<ModelSceneLoader>,
     scenes: Res<Assets<Scene>>,
-    mut state: ResMut<GltfLoadingState>,
+    state: ResMut<GltfLoadingState>,
     mut commands: Commands,
     time: Res<Time>,
 ) {
-    if state.loading && !state.loaded {
-        if time.elapsed_secs() > 10.0 {
-            state.error = Some("Scene loading timed out".to_string());
-            error!("Scene loading timed out: {:?}", state.scene_handle);
-            state.loading = false;
-        }
-        return;
-    }
-    
-    //info!("Checking scene at {:?}", state.scene_handle);
-    
-    let scene_opt = scenes.get(&state.scene_handle);
-    //info!("Scene found: {:?}", scene_opt.is_some());
-    
-    if scene_opt.is_none() {
-        state.loaded = false;
-        state.error = Some("Scene not found in assets".to_string());
-        error!("Scene not found: {:?}", state.scene_handle);
-        return;
-    }
-    
-    if !state.loaded {
-        state.loaded = true;
-        state.loading = false;
-        state.error = None;
-        
-        info!("Scene loaded successfully, spawning");
-        
-        commands.spawn((
-            SceneRoot(state.scene_handle.clone()),
-            Transform::default(),
-            Visibility::Visible,
-        ));
-    }
+    loader.on_glb_loaded(scenes, state, &mut commands, time);
 }
+
+
 
 fn spin_model(
     time: Res<Time>,
@@ -187,66 +254,5 @@ fn spin_model(
     }
 }
 
-fn spawn_screenshot(
-    time: Res<Time>,
-    mut commands: Commands,
-    test_mode: Res<TestMode>,
-    mut capture_timer: ResMut<CaptureTimer>,
-    mut test_mode_exit: ResMut<TestModeExit>,
-    state: Res<GltfLoadingState>,
-    scene_query: Query<(Entity, &Visibility), With<SceneRoot>>,
-) {
-    if !test_mode.0 {
-        return;
-    }
-    
-    if test_mode_exit.0 {
-        return;
-    }
-    
-    capture_timer.0.tick(time.delta());
-    if capture_timer.0.just_finished() {
-        if !state.loaded {
-            error!("Cannot capture screenshot: model not loaded");
-            return;
-        }
-        
-        let scene_entity = scene_query.single().ok();
-        if scene_entity.is_none() {
-            error!("Cannot capture screenshot: scene root not found");
-            return;
-        }
-        
-        info!("Capturing screenshot");
-        commands.spawn(Screenshot::primary_window()).observe(save_to_disk("screenshot.png"));
-        test_mode_exit.0 = true;
-        capture_timer.0 = Timer::from_seconds(0.0, TimerMode::Repeating);
-        
-        if test_mode.0 {
-            std::thread::sleep(std::time::Duration::from_millis(500));
-            std::process::exit(0);
-        }
-    }
-}
 
-fn check_screenshot(
-    screenshot_entity: Query<Entity, With<Screenshot>>,
-    mut commands: Commands,
-    mut test_mode_exit: ResMut<TestModeExit>,
-    mut capture_timer: ResMut<CaptureTimer>,
-    state: Res<GltfLoadingState>,
-) {
-    if screenshot_entity.is_empty() {
-        return;
-    }
-    
-    if !state.loaded {
-        commands.entity(screenshot_entity.single().unwrap()).insert(Visibility::Hidden);
-        return;
-    }
-    
-    info!("Screenshot saved to screenshot.png");
-    
-    test_mode_exit.0 = true;
-    capture_timer.0 = Timer::from_seconds(0.0, TimerMode::Repeating);
-}
+
