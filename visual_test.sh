@@ -5,36 +5,65 @@ if [ "${DEBUG:-false}" = "true" ]; then
     DEBUG=true
 fi
 
-# Accept optional image file argument, default to screenshot.png
-IMAGE_FILE="${1:-screenshot.png}"
+# Accept optional output mp4 file argument, default to output.mp4
+OUTPUT_FILE="${1:-output.mp4}"
 
-if [ ! -f "$IMAGE_FILE" ]; then
-    echo "Error: $IMAGE_FILE not found"
+# Find all screenshots in /tmp
+SCREENSHOTS=$(ls -t /tmp/screenshot_*.png 2>/dev/null)
+
+if [ -z "$SCREENSHOTS" ]; then
+    echo "Error: No screenshots found in /tmp"
     exit 1
 fi
 
-# Create temp file for base64
+# Count screenshots
+SCREENSHOT_COUNT=$(echo "$SCREENSHOTS" | wc -w)
+echo "Found $SCREENSHOT_COUNT screenshots in /tmp"
+
+# Create temp directory for processing
+TEMP_DIR=$(mktemp -d)
+trap "rm -rf $TEMP_DIR" EXIT
+
+# Copy screenshots to temp dir with sequential names
+i=1
+for screenshot in $SCREENSHOTS; do
+    cp "$screenshot" "$TEMP_DIR/frame_$(printf '%05d' $i).png"
+    i=$((i + 1))
+done
+
+# Create mp4 using ffmpeg
+echo "Creating MP4 from $SCREENSHOT_COUNT screenshots..."
+ffmpeg -framerate 10 -pattern_type glob -i "$TEMP_DIR"/frame_*.png -vf "fps=10,scale=800:600" -c:v libx264 -preset fast -crf 28 "$OUTPUT_FILE" -y 2>&1
+
+if [ $? -ne 0 ]; then
+    echo "Error: Failed to create MP4"
+    exit 1
+fi
+
+echo "MP4 created: $OUTPUT_FILE"
+
+# Convert to base64
 BASE64_FILE=$(mktemp)
-base64 -w0 "$IMAGE_FILE" > "$BASE64_FILE"
-BASE64_IMAGE=$(cat "$BASE64_FILE")
+base64 -w0 "$OUTPUT_FILE" > "$BASE64_FILE"
+BASE64_VIDEO=$(cat "$BASE64_FILE")
 rm "$BASE64_FILE"
 
-if [ -z "$BASE64_IMAGE" ]; then
-    echo "Error: Failed to read $IMAGE_FILE"
+if [ -z "$BASE64_VIDEO" ]; then
+    echo "Error: Failed to convert MP4 to base64"
     exit 1
 fi
 
 if [ "$DEBUG" = "true" ]; then
-    echo "Base64 length: $(echo -n "$BASE64_IMAGE" | wc -c)" >&2
+    echo "Base64 length: $(echo -n "$BASE64_VIDEO" | wc -c)" >&2
 fi
 
 VISION_PORT=${VISION_PORT:-8082}
 
 # Escape special characters in base64 for JSON
-BASE64_ESCAPED=$(echo -n "$BASE64_IMAGE" | sed 's/\\/\\\\/g; s/"/\\\"/g; s/\\t/\\t/g; s/\\r/\\r/g; s/\\n/\\n/g')
+BASE64_ESCAPED=$(echo -n "$BASE64_VIDEO" | sed 's/\\/\\\\/g; s/"/\\\"/g; s/\\t/\\t/g; s/\\r/\\r/g; s/\\n/\\n/g')
 
-# OpenAI-compatible format with image_url
-PROMPT_JSON='{"model": "Qwen2-VL-7B-Instruct-Q5_K_S.gguf", "messages": [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,'$BASE64_ESCAPED'"}}, {"type": "text", "text": "Describe this image. Focus ONLY on visual elements: colors, shapes, positions, orientations. Do not make any reasoning or comparisons. Report exactly what visual elements are present."}]}], "max_tokens": 512, "temperature": 0.1}'
+# OpenAI-compatible format with video_url
+PROMPT_JSON='{"model": "Qwen2-VL-7B-Instruct-Q5_K_S.gguf", "messages": [{"role": "user", "content": [{"type": "video_url", "video_url": {"url": "data:video/mp4;base64,'$BASE64_ESCAPED'"}}, {"type": "text", "text": "Analyze this video of the 3D model. Focus ONLY on visual elements: colors, shapes, positions, orientations, camera movements. Do not make any reasoning or comparisons. Report exactly what visual elements are present."}]}], "max_tokens": 512, "temperature": 0.1}'
 
 echo "Sending vision request to port ${VISION_PORT}..."
 TMP_JSON=$(mktemp)

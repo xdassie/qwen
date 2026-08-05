@@ -1,17 +1,54 @@
 use bevy::prelude::*;
-use bevy::render::view::screenshot::{save_to_disk, Screenshot};
 use std::env;
 use std::fs;
 
 /// Trait for recording screenshots, always active and writes to /tmp each frame
 pub trait Recorder {
     fn record(&self, frame_count: u64);
+    fn limit_reached(&self, frame_count: u64) -> bool;
+    fn capture_screenshot(&self, frame_count: u64, commands: Commands, window_query: Query<Entity, With<Window>>);
+    fn get_screenshot_limit(&self) -> u64;
 }
 
-impl Recorder for ModelSceneLoader {
+#[derive(Resource, Clone)]
+pub struct ScreenshotRecorder {
+    screenshot_limit: u64,
+}
+
+impl ScreenshotRecorder {
+    pub fn new(limit: u64) -> Self {
+        Self { screenshot_limit: limit }
+    }
+}
+
+impl Recorder for ScreenshotRecorder {
     fn record(&self, frame_count: u64) {
-        let _filename = format!("/tmp/screenshot_{}.png", frame_count);
-        // Recording is handled by the capture_screenshot system
+        println!("DEBUG: Record frame {}", frame_count);
+    }
+    
+    fn limit_reached(&self, frame_count: u64) -> bool {
+        frame_count >= self.screenshot_limit
+    }
+    
+    fn capture_screenshot(
+        &self,
+        frame_count: u64,
+        mut commands: Commands,
+        window_query: Query<Entity, With<Window>>,
+    ) {
+        self.record(frame_count);
+        
+        println!("DEBUG: Capturing screenshot {}", frame_count);
+        
+        // Spawn screenshot capture on the first window
+        for _window_entity in window_query.iter() {
+            let filename = format!("/tmp/screenshot_{}.png", frame_count);
+            commands.spawn(bevy::render::view::screenshot::Screenshot::primary_window()).observe(bevy::render::view::screenshot::save_to_disk(filename));
+        }
+    }
+    
+    fn get_screenshot_limit(&self) -> u64 {
+        self.screenshot_limit
     }
 }
 
@@ -32,15 +69,16 @@ pub trait SceneLoader {
 }
 
 #[derive(Resource, Clone)]
-#[allow(dead_code)]
 pub struct ModelSceneLoader {
     model_path: String,
+    screenshot_limit: u64,
 }
 
 impl ModelSceneLoader {
-    pub fn new(model_path: &str) -> Self {
+    pub fn new(model_path: &str, screenshot_limit: u64) -> Self {
         ModelSceneLoader {
             model_path: model_path.to_string(),
+            screenshot_limit,
         }
     }
 }
@@ -132,6 +170,9 @@ pub struct GltfLoadingState {
     pub scene_handle: Handle<Scene>,
 }
 
+#[derive(Resource, Default, Clone)]
+struct FrameCount(u64);
+
 pub fn get_model_path() -> String {
     let args: Vec<String> = env::args().collect();
     for (i, arg) in args.iter().enumerate() {
@@ -144,21 +185,34 @@ pub fn get_model_path() -> String {
     String::new()
 }
 
-#[derive(Resource, Default, Clone)]
-struct FrameCount(u64);
+
 
 pub fn run() {
-    let loader = ModelSceneLoader::new(&get_model_path());
+    let args: Vec<String> = std::env::args().collect();
+    let limit = if let Some(arg) = args.iter().find(|a| a.starts_with("--limit=")) {
+        arg.trim_start_matches("--limit=").parse::<usize>().unwrap_or(100)
+    } else if let Some(arg) = args.iter().find(|a| *a == "--limit") {
+        arg.trim().parse::<usize>().unwrap_or(100)
+    } else {
+        100
+    };
     
-    App::new()
-        .init_resource::<GltfLoadingState>()
-        .init_resource::<FrameCount>()
-        .insert_resource(loader.clone())
-        .add_systems(Startup, setup)
-        .add_systems(Startup, update_loader)
-        .add_systems(Update, (update_scene, spin_model, capture_screenshot))
-        .add_systems(Update, capture_screenshot)
-        .add_plugins(DefaultPlugins
+    let loader = ModelSceneLoader::new(&get_model_path(), limit as u64);
+    let recorder = ScreenshotRecorder::new(limit as u64);
+    
+    let mut app = App::new();
+    app.init_resource::<GltfLoadingState>();
+    app.init_resource::<FrameCount>();
+    app.insert_resource(loader.clone());
+    app.insert_resource(recorder.clone());
+    app.add_systems(Startup, setup);
+    app.add_systems(Startup, update_loader);
+    
+    if limit > 0 {
+        app.add_systems(Update, (update_scene, spin_model, capture_screenshot));
+    }
+    
+    app.add_plugins(DefaultPlugins
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "Bevy! GLB Loader".into(),
@@ -176,24 +230,7 @@ pub fn run() {
         .run();
 }
 
-fn capture_screenshot(
-    mut commands: Commands,
-    window_query: Query<Entity, With<Window>>,
-    mut frame_count: ResMut<FrameCount>,
-    loader: Res<ModelSceneLoader>,
-) {
-    // Call the Recorder trait to trigger recording
-    loader.record(frame_count.0);
-    frame_count.0 += 1;
-    
-    println!("DEBUG: Capturing screenshot {}", frame_count.0 - 1);
-    
-    // Spawn screenshot capture on the first window
-    for _window_entity in window_query.iter() {
-        let filename = format!("/tmp/screenshot_{}.png", frame_count.0 - 1);
-        commands.spawn(Screenshot::primary_window()).observe(save_to_disk(filename));
-    }
-}
+
 
 fn setup(
     mut commands: Commands,
@@ -254,5 +291,24 @@ fn spin_model(
     }
 }
 
+fn capture_screenshot(
+    commands: Commands,
+    window_query: Query<Entity, With<Window>>,
+    mut frame_count: ResMut<FrameCount>,
+    recorder: Res<ScreenshotRecorder>,
+) {
+    // Increment frame count
+    frame_count.0 += 1;
+    let current_frame = frame_count.0;
+    
+    // Check if we've reached the limit using trait method
+    if recorder.limit_reached(current_frame) {
+        println!("Screenshot limit reached: {} screenshots captured", recorder.get_screenshot_limit());
+        std::process::exit(0);
+    }
+    
+    // Capture screenshot using the trait method
+    recorder.capture_screenshot(current_frame, commands, window_query);
+}
 
 
