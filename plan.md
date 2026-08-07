@@ -1,216 +1,75 @@
-# Plan: Fix Unused Code Warnings and Refactor Recorder Architecture
+# Plan: Move Scene Loading Functions to Trait
 
-## Problem Analysis
+## Goal
+Move `load_scene` and `update_scene` functions from `bevy.rs` to the `SceneLoader` trait, keeping consistency with the `capture_screenshot` pattern.
 
-### Unused Code Warning
-- **Location**: `src/graphics/bevy.rs:18-20`
-- **Issue**: `limit_reached` method defined but never called
-- **Root Cause**: Inline check at line 29 bypasses trait method:
-  ```rust
-  let limit_reached = frame_count >= self.get_screenshot_limit();  // Line 29 - duplicates logic
-  ```
+## Current Issues in bevy.rs
+1. Lines 21-34: Duplicate `FrameCount` struct and `get_model_path()` function
+2. Lines 58-60: Empty system closure with comment
+3. Lines 66-68: Malformed `else {` block (no matching `if`)
+4. Line 62-68: Duplicate `.add_systems(Update, spin_model)` call
 
-### Architectural Violation
-- `ModelSceneLoader` implements `Recorder` trait but shouldn't know about screenshots
-- Scene loading and screenshot recording are orthogonal concerns
-- Trait methods (`limit_reached`, `capture_screenshot`, `get_screenshot_limit`) are defined but bypassed
+## Minimal Changes Needed
 
-## Solution: Refactor to Separate Concerns
+### Step 0: Spike - Quick Fix & Verify
+1. Make minimal fix to get `cargo check` passing
+2. Verify the trait methods are correctly called
+3. If it compiles, proceed with full cleanup
+4. If it fails, update plan based on error
 
-### 1. Keep `Recorder` Trait (src/graphics/bevy.rs:6-11)
+### Step 1: Remove duplicate code
+- Delete lines 21-34 (duplicate definitions)
 
+### Step 2: Fix system registration
+Replace:
 ```rust
-pub trait Recorder {
-    fn record(&self, frame_count: u64);
-    fn limit_reached(&self, frame_count: u64) -> bool;
-    fn capture_screenshot(&self, frame_count: u64, commands: Commands, window_query: Query<Entity, With<Window>>);
-    fn get_screenshot_limit(&self) -> u64;
-}
+app.add_systems(Startup, setup);
+app.add_systems(Startup, || {
+    // load_scene is now a trait method on ModelSceneLoader
+});
 ```
 
-**Rationale**: 
-- `record()` is called at line 30 inside `capture_screenshot` impl (even though bypassed by inline check)
-- `limit_reached()` serves architectural purpose of encapsulating check logic
-- `capture_screenshot()` is the core method - must be called, not bypassed
-- `get_screenshot_limit()` is used by `limit_reached()` - needed for trait contract
-
-### 2. Create New `ScreenshotRecorder` Resource
-
-Add new struct that implements `Recorder` trait fully:
-
+With:
 ```rust
-#[derive(Resource, Clone)]
-pub struct ScreenshotRecorder {
-    screenshot_limit: u64,
-}
-
-impl ScreenshotRecorder {
-    pub fn new(limit: u64) -> Self {
-        Self { screenshot_limit: limit }
-    }
-}
-
-impl Recorder for ScreenshotRecorder {
-    fn record(&self, frame_count: u64) {
-        println!("DEBUG: Record frame {}", frame_count);
-    }
-    
-    fn limit_reached(&self, frame_count: u64) -> bool {
-        frame_count >= self.screenshot_limit
-    }
-    
-    fn capture_screenshot(
-        &self,
-        frame_count: u64,
-        mut commands: Commands,
-        window_query: Query<Entity, With<Window>>,
-    ) {
-        println!("DEBUG: Capturing screenshot {}", frame_count);
-        
-        for _window_entity in window_query.iter() {
-            let filename = format!("/tmp/screenshot_{}.png", frame_count);
-            commands.spawn(bevy::render::view::screenshot::Screenshot::primary_window())
-                .observe(bevy::render::view::screenshot::save_to_disk(filename));
-        }
-    }
-    
-    fn get_screenshot_limit(&self) -> u64 {
-        self.screenshot_limit
-    }
-}
+app.add_systems(Startup, setup)
+    .add_systems(Startup, |loader: Res<ModelSceneLoader>, asset_server: Res<AssetServer>, mut state: ResMut<GltfLoadingState>| {
+        ModelSceneLoader::load_glb(&loader, &asset_server, &mut state);
+    });
 ```
 
-**Placement**: After trait definition in `src/graphics/bevy.rs`, before `SceneLoader` trait
-
-### 3. Remove Screenshot Logic from `ModelSceneLoader`
-
-Keep only scene-loading methods:
-- `load_glb()` - loads GLB model
-- `on_glb_loaded()` - callback after GLB loaded
-
-Remove from `impl Recorder for ModelSceneLoader`:
-- `record()` - moved to `ScreenshotRecorder`
-- `limit_reached()` - moved to `ScreenshotRecorder`
-- `capture_screenshot()` - moved to `ScreenshotRecorder`
-- `get_screenshot_limit()` - moved to `ScreenshotRecorder`
-
-### 4. Update `capture_screenshot` System Function
-
-Current (WRONG - uses loader for screenshots):
+### Step 3: Fix Update system chain
+Replace:
 ```rust
-fn capture_screenshot(
-    commands: Commands,
-    window_query: Query<Entity, With<Window>>,
-    mut frame_count: ResMut<FrameCount>,
-    loader: Res<ModelSceneLoader>,  // ❌ Wrong resource
-) {
-    frame_count.0 += 1;
-    let current_frame = frame_count.0;
-    loader.capture_screenshot(current_frame, commands, window_query);  // ❌ Wrong call
+app.add_systems(Update, spin_model)
+    .add_systems(Update, |scenes: Res<Assets<Scene>>, mut commands: Commands, time: Res<Time>, loader: Res<ModelSceneLoader>, state: ResMut<GltfLoadingState>| {
+        // Call trait method directly
+        ModelSceneLoader::on_glb_loaded(&loader, &scenes, &mut state, &mut commands, &time);
+    }); else {
+    app.add_systems(Update, spin_model);
 }
 ```
 
-Refactored (CORRECT - uses dedicated recorder):
+With:
 ```rust
-fn capture_screenshot(
-    commands: Commands,
-    window_query: Query<Entity, With<Window>>,
-    mut frame_count: ResMut<FrameCount>,
-    recorder: Res<ScreenshotRecorder>,  // ✅ Correct resource
-) {
-    frame_count.0 += 1;
-    let current_frame = frame_count.0;
-    
-    // ✅ Call trait method - no inline duplication
-    if recorder.limit_reached(current_frame) {
-        println!("Screenshot limit reached: {}", recorder.get_screenshot_limit());
-        std::process::exit(0);
-    }
-    
-    recorder.capture_screenshot(current_frame, commands, window_query);  // ✅ Call trait method
-}
+app.add_systems(Update, spin_model)
+    .add_systems(Update, |scenes: Res<Assets<Scene>>, mut commands: Commands, time: Res<Time>, loader: Res<ModelSceneLoader>, state: ResMut<GltfLoadingState>| {
+        ModelSceneLoader::on_glb_loaded(&loader, &scenes, &mut state, &mut commands, &time);
+    });
 ```
 
-### 5. Update `run()` Function
+### Step 4: Verify compilation
+Run: `cargo check`
 
-Add `ScreenshotRecorder` initialization:
-
-```rust
-pub fn run() {
-    let args: Vec<String> = std::env::args().collect();
-    let limit = /* ... existing limit parsing logic ... */;
-    
-    let loader = ModelSceneLoader::new(&get_model_path(), limit as u64);
-    let recorder = ScreenshotRecorder::new(limit as u64);  // ✅ NEW
-    
-    let mut app = App::new();
-    app.init_resource::<GltfLoadingState>();
-    app.init_resource::<FrameCount>();
-    app.insert_resource(loader);
-    app.insert_resource(recorder);  // ✅ NEW RESOURCE
-    
-    if limit > 0 {
-        app.add_systems(Update, (update_scene, spin_model, capture_screenshot));
-    }
-    
-    // ... rest of plugin setup ...
-}
-```
-
-### 6. Update `mod.rs`
-
-Add new struct to module exports:
-
-```rust
-pub mod bevy;
-pub use bevy::*;  // This will include ScreenshotRecorder
-pub mod cameras;
-```
-
-## Implementation Order
-
-1. **Step 1**: Add `ScreenshotRecorder` struct and impl to `bevy.rs` (after trait definition)
-2. **Step 2**: Remove `impl Recorder for ModelSceneLoader` entirely (keep only `SceneLoader` impl)
-3. **Step 3**: Update `capture_screenshot` system function to use `ScreenshotRecorder`
-4. **Step 4**: Update `run()` to insert `ScreenshotRecorder` resource
-5. **Step 5**: Run `cargo build` to verify no warnings
-
-## Expected Outcome
-
-### Before
-```
-warning: method `limit_reached` is never used
-  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-```
-
-### After
-- ✅ No unused warnings
-- ✅ `ModelSceneLoader` only handles scene loading
-- ✅ `ScreenshotRecorder` only handles screenshots
-- ✅ `Recorder` trait is the sole source of screenshot logic
-- ✅ No inline duplication
-- ✅ `limit_reached()` is called by system function
-- ✅ All functionality preserved
-
-## Verification Steps
-
-After implementation:
-1. `cargo build` - should compile without warnings
-2. Check `bevy.rs` for:
-   - `ScreenshotRecorder` struct present
-   - `impl Recorder for ScreenshotRecorder` complete
-   - `impl Recorder for ModelSceneLoader` removed
-   - `capture_screenshot` system uses `recorder` resource
-   - `run()` inserts `ScreenshotRecorder`
-3. Test screenshot capture works as before
-4. Verify frame count and limit logic work correctly
+## Expected Result
+- `load_scene` and `update_scene` functions removed from `bevy.rs`
+- Trait methods `load_glb()` and `on_glb_loaded()` called inline
+- Consistent with `capture_screenshot` pattern
+- Code compiles without errors
 
 ## Files to Modify
+- `/home/dave/sync/test/src/rust/qwen/src/graphics/bevy.rs`
 
-| File | Changes |
-|------|---------|
-| `src/graphics/bevy.rs` | Add `ScreenshotRecorder`, remove `impl Recorder for ModelSceneLoader`, update `capture_screenshot` system, update `run()` |
-| `src/graphics/mod.rs` | No change needed (already re-exports via `pub use bevy::*`) |
-| `src/main.rs` | No change needed |
-| `Cargo.toml` | No change needed |
-| `plan.md` | This document |
+## Verification
+- `cargo check` passes
+- No warnings about unused functions
+- Build succeeds: `cargo build --release`

@@ -33,7 +33,7 @@ done
 
 # Create mp4 using ffmpeg
 echo "Creating MP4 from $SCREENSHOT_COUNT screenshots..."
-ffmpeg -framerate 10 -pattern_type glob -i "$TEMP_DIR"/frame_*.png -vf "fps=10,scale=800:600" -c:v libx264 -preset fast -crf 28 "$OUTPUT_FILE" -y 2>&1
+ffmpeg -framerate 10 -i "$TEMP_DIR"/frame_%05d.png -vf "fps=10,scale=800:600" -c:v libx264 -preset fast -crf 28 "$OUTPUT_FILE" -y 2>&1
 
 if [ $? -ne 0 ]; then
     echo "Error: Failed to create MP4"
