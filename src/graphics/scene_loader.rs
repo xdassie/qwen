@@ -18,14 +18,12 @@ pub trait SceneLoader: Resource {
 #[derive(Resource, Clone)]
 pub struct ModelSceneLoader {
     model_path: String,
-    screenshot_limit: u64,
 }
 
 impl ModelSceneLoader {
-    pub fn new(model_path: &str, screenshot_limit: u64) -> Self {
+    pub fn new(model_path: &str) -> Self {
         ModelSceneLoader {
             model_path: model_path.to_string(),
-            screenshot_limit,
         }
     }
 }

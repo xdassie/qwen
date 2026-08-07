@@ -1,10 +1,7 @@
 use bevy::prelude::*;
 use std::env;
-use crate::graphics::recorder::{Recorder, ScreenshotRecorder};
+use crate::graphics::recorder::{FrameCount, Recorder, ScreenshotRecorder};
 use crate::graphics::scene_loader::{SceneLoader, ModelSceneLoader, GltfLoadingState};
-
-#[derive(Resource, Default, Clone)]
-struct FrameCount(u64);
 
 pub fn get_model_path() -> String {
     let args: Vec<String> = env::args().collect();
@@ -28,38 +25,35 @@ pub fn run() {
         100
     };
     
-    let loader = ModelSceneLoader::new(&get_model_path(), limit as u64);
+    let loader = ModelSceneLoader::new(&get_model_path());
     let recorder = ScreenshotRecorder::new(limit as u64);
     
     let mut app = App::new();
     app.init_resource::<FrameCount>();
     app.init_resource::<GltfLoadingState>();
     
-    app.insert_resource(loader.clone());
-    app.insert_resource(recorder.clone());
+    app.insert_resource(FrameCount(0));
+    app.insert_resource(loader);
+    app.insert_resource(recorder);
     
     app.add_systems(Startup, setup)
         .add_systems(Startup, |loader: Res<ModelSceneLoader>, asset_server: Res<AssetServer>, state: ResMut<GltfLoadingState>| {
             ModelSceneLoader::load_glb(&loader, &asset_server, state);
         });
     
-    if limit > 0 {
-        app.add_systems(Update, spin_model)
-            .add_systems(Update, |scenes: Res<Assets<Scene>>, mut commands: Commands, time: Res<Time>, loader: Res<ModelSceneLoader>, state: ResMut<GltfLoadingState>| {
-                ModelSceneLoader::on_glb_loaded(&loader, &scenes, state, &mut commands, &time);
-            })
-            .add_systems(Update, |commands: Commands, window_query: Query<Entity, With<Window>>, mut frame_count: ResMut<FrameCount>, recorder: Res<ScreenshotRecorder>| {
-                frame_count.0 += 1;
-                let current_frame = frame_count.0;
-                if recorder.limit_reached(current_frame) {
-                    println!("Screenshot limit reached: {} screenshots captured", recorder.get_screenshot_limit());
-                    std::process::exit(0);
-                }
-                <ScreenshotRecorder as Recorder>::capture_screenshot(&*recorder, current_frame, commands, window_query);
-            });
-    } else {
-        app.add_systems(Update, spin_model);
-    }
+    app.add_systems(Update, spin_model)
+        .add_systems(Update, |scenes: Res<Assets<Scene>>, mut commands: Commands, time: Res<Time>, loader: Res<ModelSceneLoader>, state: ResMut<GltfLoadingState>| {
+            ModelSceneLoader::on_glb_loaded(&loader, &scenes, state, &mut commands, &time);
+        })
+        .add_systems(Update, |mut frame_count: ResMut<FrameCount>, recorder: Res<ScreenshotRecorder>, commands: Commands, window_query: Query<Entity, With<Window>>| {
+            frame_count.0 += 1;
+            let current_frame = frame_count.0;
+            if recorder.limit_reached(current_frame) {
+                println!("Screenshot limit reached: {} screenshots captured", recorder.get_screenshot_limit());
+                std::process::exit(0);
+            }
+            <ScreenshotRecorder as Recorder>::capture_screenshot(&*recorder, current_frame, commands, window_query);
+        });
     
     app.add_plugins(DefaultPlugins
             .set(WindowPlugin {

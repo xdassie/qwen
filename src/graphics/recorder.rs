@@ -1,5 +1,8 @@
 use bevy::prelude::*;
 
+#[derive(Resource, Default)]
+pub struct FrameCount(pub u64);
+
 /// Trait for recording screenshots, always active and writes to /tmp each frame
 pub trait Recorder {
     fn limit_reached(&self, frame_count: u64) -> bool;
