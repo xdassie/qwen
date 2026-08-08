@@ -2,6 +2,9 @@ use bevy::prelude::*;
 use std::env;
 use crate::graphics::recorder::{FrameCount, Recorder, ScreenshotRecorder};
 use crate::graphics::scene_loader::{SceneLoader, ModelSceneLoader, GltfLoadingState};
+use crate::graphics::transform::{TransformListener, TransformKeyboardPlugin};
+use crate::input::keyboard::KeyboardPlugin;
+
 
 pub fn get_model_path() -> String {
     let args: Vec<String> = env::args().collect();
@@ -18,11 +21,11 @@ pub fn get_model_path() -> String {
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
     let limit = if let Some(arg) = args.iter().find(|a| a.starts_with("--limit=")) {
-        arg.trim_start_matches("--limit=").parse::<usize>().unwrap_or(100)
+        arg.trim_start_matches("--limit=").parse::<usize>().unwrap_or(0)
     } else if let Some(arg) = args.iter().find(|a| *a == "--limit") {
-        arg.trim().parse::<usize>().unwrap_or(100)
+        arg.trim().parse::<usize>().unwrap_or(0)
     } else {
-        100
+        0
     };
     
     let loader = ModelSceneLoader::new(&get_model_path());
@@ -39,20 +42,28 @@ pub fn run() {
     app.add_systems(Startup, setup)
         .add_systems(Startup, |loader: Res<ModelSceneLoader>, asset_server: Res<AssetServer>, state: ResMut<GltfLoadingState>| {
             ModelSceneLoader::load_glb(&loader, &asset_server, state);
-        });
-    
-    app.add_systems(Update, spin_model)
+        })
         .add_systems(Update, |scenes: Res<Assets<Scene>>, mut commands: Commands, time: Res<Time>, loader: Res<ModelSceneLoader>, state: ResMut<GltfLoadingState>| {
             ModelSceneLoader::on_glb_loaded(&loader, &scenes, state, &mut commands, &time);
+        })
+        .add_systems(Update, |entities: Query<Entity, With<SceneRoot>>, mut commands: Commands, has_listener: Query<Entity, (With<TransformListener>, With<SceneRoot>)>| {
+            for entity in entities.iter() {
+                if !has_listener.iter().any(|e| e == entity) {
+                    commands.entity(entity).insert(TransformListener);
+                }
+            }
         })
         .add_systems(Update, |mut frame_count: ResMut<FrameCount>, recorder: Res<ScreenshotRecorder>, commands: Commands, window_query: Query<Entity, With<Window>>| {
             frame_count.0 += 1;
             let current_frame = frame_count.0;
-            if recorder.limit_reached(current_frame) {
-                println!("Screenshot limit reached: {} screenshots captured", recorder.get_screenshot_limit());
+            let limit = recorder.get_screenshot_limit();
+            if limit > 0 && recorder.limit_reached(current_frame) {
+                println!("Screenshot limit reached: {} screenshots captured", limit);
                 std::process::exit(0);
             }
-            <ScreenshotRecorder as Recorder>::capture_screenshot(&*recorder, current_frame, commands, window_query);
+            if limit > 0 {
+                <ScreenshotRecorder as Recorder>::capture_screenshot(&*recorder, current_frame, commands, window_query);
+            }
         });
     
     app.add_plugins(DefaultPlugins
@@ -70,6 +81,8 @@ pub fn run() {
                 ..default()
             })
         )
+        .add_plugins(KeyboardPlugin)
+        .add_plugins(TransformKeyboardPlugin)
         .run();
 }
 
@@ -98,13 +111,4 @@ fn setup(mut commands: Commands) {
         },
         Transform::from_xyz(0.0, 0.0, 0.0),
     ));
-}
-
-pub fn spin_model(
-    time: Res<Time>,
-    mut model_query: Query<&mut Transform, (With<SceneRoot>, Without<Camera3d>)>,
-) {
-    for mut transform in model_query.iter_mut() {
-        transform.rotate_z(time.delta_secs() * 2.0);
-    }
 }
