@@ -41,7 +41,7 @@ impl KeyboardListener for TransformListener {
             }
             KeyCode::ArrowRight => {
                 transform.rotate_z(-0.01);
-            }
+}
             _ => {}
         }
     }

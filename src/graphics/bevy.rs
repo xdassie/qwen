@@ -49,7 +49,7 @@ pub fn run() {
         .add_systems(Update, |entities: Query<Entity, With<SceneRoot>>, mut commands: Commands, has_listener: Query<Entity, (With<TransformListener>, With<SceneRoot>)>| {
             for entity in entities.iter() {
                 if !has_listener.iter().any(|e| e == entity) {
-                    commands.entity(entity).insert(TransformListener);
+                    commands.entity(entity).insert(TransformListener::default());
                 }
             }
         })
