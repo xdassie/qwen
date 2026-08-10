@@ -30,6 +30,11 @@ pub struct TransformListener;
 
 impl KeyboardListener<Transform> for TransformListener {
     fn handle(&mut self, event: &KeyboardEvent, transform: &mut Transform) {
+        // Ignore transform controls when any modifier is pressed
+        if event.modifiers.shift || event.modifiers.ctrl || event.modifiers.alt || event.modifiers.win {
+            return;
+        }
+        
         match event.code {
             KeyCode::ArrowUp => {
                 transform.rotate_x(0.01);
