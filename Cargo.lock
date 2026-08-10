@@ -908,6 +908,7 @@ dependencies = [
  "cairo-rs",
  "dirs",
  "image",
+ "log",
  "pango",
  "pangocairo",
  "rand 0.10.2",
@@ -917,6 +918,8 @@ dependencies = [
  "serde_json",
  "strum",
  "strum_macros",
+ "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 

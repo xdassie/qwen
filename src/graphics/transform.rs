@@ -17,8 +17,9 @@ pub fn keyboard_message_listener(
     mut listeners: Query<(Entity, &mut Transform, &mut TransformListener), With<TransformListener>>,
 ) {
     for (_entity, mut transform, mut listener) in listeners.iter_mut() {
-        for event in reader.read() {
-            listener.handle(&event, &mut *transform);
+        // Only read once per entity so CameraListener can also receive events
+        if let Some(event) = reader.read().next() {
+            listener.handle(event, &mut *transform);
         }
     }
 }
@@ -27,7 +28,7 @@ pub fn keyboard_message_listener(
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct TransformListener;
 
-impl KeyboardListener for TransformListener {
+impl KeyboardListener<Transform> for TransformListener {
     fn handle(&mut self, event: &KeyboardEvent, transform: &mut Transform) {
         match event.code {
             KeyCode::ArrowUp => {
@@ -41,7 +42,7 @@ impl KeyboardListener for TransformListener {
             }
             KeyCode::ArrowRight => {
                 transform.rotate_z(-0.01);
-}
+            }
             _ => {}
         }
     }

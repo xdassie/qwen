@@ -102,6 +102,7 @@ impl SceneLoader for ModelSceneLoader {
                 Transform::default(),
                 Visibility::Visible,
             ));
+            return;
         }
     }
 }

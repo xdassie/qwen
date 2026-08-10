@@ -1,5 +1,6 @@
 use bevy::input::keyboard::KeyCode;
 use bevy::prelude::*;
+use tracing::{info, trace};
 
 /// Represents keyboard modifier keys
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -13,31 +14,7 @@ pub struct ModifierKeys {
     pub scroll_lock: bool,
 }
 
-impl ModifierKeys {
-    pub fn new() -> Self {
-        Self::default()
-    }
 
-    pub fn with_shift(mut self) -> Self {
-        self.shift = true;
-        self
-    }
-
-    pub fn with_ctrl(mut self) -> Self {
-        self.ctrl = true;
-        self
-    }
-
-    pub fn with_alt(mut self) -> Self {
-        self.alt = true;
-        self
-    }
-
-    pub fn with_win(mut self) -> Self {
-        self.win = true;
-        self
-    }
-}
 
 /// Keyboard event for the high-speed in-memory message bus
 #[derive(Message, Clone, Copy, Debug, PartialEq)]
@@ -70,6 +47,9 @@ pub fn keyboard_input_system(
             modifiers,
             pressed: true,
         });
+        info!("KeyboardEvent produced: code={:?}, pressed=true", key_code);
+        trace!("KeyboardEvent produced details: modifiers.shift={:?}, modifiers.ctrl={:?}, modifiers.alt={:?}, modifiers.win={:?}, modifiers.fn_lock={:?}, modifiers.caps_lock={:?}, modifiers.scroll_lock={:?}", 
+            modifiers.shift, modifiers.ctrl, modifiers.alt, modifiers.win, modifiers.fn_lock, modifiers.caps_lock, modifiers.scroll_lock);
     }
     for key_code in keyboard.get_just_released() {
         let modifiers = extract_modifiers(&keyboard);
@@ -78,6 +58,9 @@ pub fn keyboard_input_system(
             modifiers,
             pressed: false,
         });
+        info!("KeyboardEvent produced: code={:?}, pressed=false", key_code);
+        trace!("KeyboardEvent produced details: modifiers.shift={:?}, modifiers.ctrl={:?}, modifiers.alt={:?}, modifiers.win={:?}, modifiers.fn_lock={:?}, modifiers.caps_lock={:?}, modifiers.scroll_lock={:?}", 
+            modifiers.shift, modifiers.ctrl, modifiers.alt, modifiers.win, modifiers.fn_lock, modifiers.caps_lock, modifiers.scroll_lock);
     }
 }
 
@@ -98,8 +81,13 @@ fn extract_modifiers(keyboard: &ButtonInput<KeyCode>) -> ModifierKeys {
 
 /// Trait for components that respond to keyboard events
 /// Consumes the event and performs its own logic
-pub trait KeyboardListener {
-    fn handle(&mut self, event: &KeyboardEvent, transform: &mut Transform);
+/// Generic over a state component to allow flexibility
+pub trait KeyboardListener<State: Component>: Component {
+    fn handle(&mut self, event: &KeyboardEvent, state: &mut State) {
+        info!("KeyboardEvent consumed: code={:?}, pressed={}", event.code, event.pressed);
+        trace!("KeyboardEvent consumed details: modifiers.shift={:?}, modifiers.ctrl={:?}, modifiers.alt={:?}, modifiers.win={:?}, modifiers.fn_lock={:?}, modifiers.caps_lock={:?}, modifiers.scroll_lock={:?}", 
+            event.modifiers.shift, event.modifiers.ctrl, event.modifiers.alt, event.modifiers.win, event.modifiers.fn_lock, event.modifiers.caps_lock, event.modifiers.scroll_lock);
+    }
 }
 
 

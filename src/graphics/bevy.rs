@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use std::env;
+use crate::graphics::cameras::{CameraPlugin, EditorCamera, CameraListener};
 use crate::graphics::recorder::{FrameCount, Recorder, ScreenshotRecorder};
 use crate::graphics::scene_loader::{SceneLoader, ModelSceneLoader, GltfLoadingState};
 use crate::graphics::transform::{TransformListener, TransformKeyboardPlugin};
@@ -83,10 +84,11 @@ pub fn run() {
         )
         .add_plugins(KeyboardPlugin)
         .add_plugins(TransformKeyboardPlugin)
+        .add_plugins(CameraPlugin)
         .run();
 }
 
-fn setup(mut commands: Commands) {
+fn setup(mut commands: Commands) {    
     commands.spawn((
         DirectionalLight {
             color: Color::WHITE,
@@ -100,9 +102,11 @@ fn setup(mut commands: Commands) {
     commands.spawn((
         Camera3d { ..default() },
         Transform::from_xyz(0.0, 0.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
+        EditorCamera::default(),
+        CameraListener,
     ));
 
-    commands.spawn((
+        commands.spawn((
         PointLight {
             color: Color::WHITE,
             intensity: 1000.0,

@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use crate::input::keyboard::{KeyboardEvent, KeyboardListener};
 
 #[allow(dead_code)]
 #[derive(Component, Clone, Copy)]
@@ -48,6 +49,65 @@ pub struct CameraViewStore {
 #[derive(Component, Clone, Copy, Debug)]
 pub struct CameraViewSlot(pub usize);
 
+#[allow(dead_code)]
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct CameraListener;
+
+impl KeyboardListener<EditorCamera> for CameraListener {
+    fn handle(&mut self, event: &KeyboardEvent, camera: &mut EditorCamera) {
+        let dt = 0.016;
+        
+        match event.code {
+            // Shift + Arrow: Rotate camera view
+            KeyCode::ArrowUp if event.modifiers.shift => {
+                camera.target_pitch -= 2.0 * dt;
+            }
+            KeyCode::ArrowDown if event.modifiers.shift => {
+                camera.target_pitch += 2.0 * dt;
+            }
+            KeyCode::ArrowLeft if event.modifiers.shift => {
+                camera.target_yaw -= 2.0 * dt;
+            }
+            KeyCode::ArrowRight if event.modifiers.shift => {
+                camera.target_yaw += 2.0 * dt;
+            }
+            
+            // Ctrl + Arrow: Pan camera position
+            KeyCode::ArrowUp if event.modifiers.ctrl => {
+                let dir = camera.target_focus.normalize_or_zero();
+                camera.target_focus.y += 50.0 * dt;
+            }
+            KeyCode::ArrowDown if event.modifiers.ctrl => {
+                let dir = camera.target_focus.normalize_or_zero();
+                camera.target_focus.y -= 50.0 * dt;
+            }
+            KeyCode::ArrowLeft if event.modifiers.ctrl => {
+                let dir = camera.target_focus.normalize_or_zero();
+                camera.target_focus -= dir * 50.0 * dt;
+            }
+            KeyCode::ArrowRight if event.modifiers.ctrl => {
+                let dir = camera.target_focus.normalize_or_zero();
+                camera.target_focus += dir * 50.0 * dt;
+            }
+            
+            // Alt + Arrow: Zoom in/out
+            KeyCode::ArrowUp if event.modifiers.alt => {
+                camera.radius *= 1.1;
+            }
+            KeyCode::ArrowDown if event.modifiers.alt => {
+                camera.radius *= 0.9;
+            }
+            
+            // Alt alone: Reset zoom
+            KeyCode::PageUp if event.modifiers.alt => {
+                camera.radius = 10.0;
+            }
+            
+            _ => {}
+        }
+    }
+}
+
 impl Default for EditorCamera {
     fn default() -> Self {
         Self {
@@ -67,93 +127,40 @@ pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        let mut store = CameraViewStore::default();
-        store.views.push(CameraViewpoint::default());
-        store.views.push(CameraViewpoint::default());
-        app.init_resource::<CameraViewStore>();
-        app.insert_resource(store);
-        app.add_systems(Update, (orbit_camera_system, apply_camera_viewpoints).chain());
+        app.add_systems(Update, (camera_message_listener, camera_system));
     }
 }
 
-#[allow(dead_code)]
-fn collect_descendants(entity: Entity, children_query: &Query<&Children>, out: &mut Vec<Entity>) {
-    if let Ok(children) = children_query.get(entity) {
-        for &child in children {
-            out.push(child);
-            collect_descendants(child, children_query, out);
+pub fn camera_message_listener(
+    mut reader: MessageReader<KeyboardEvent>,
+    mut listeners: Query<(Entity, &mut Transform, &mut EditorCamera, &mut CameraListener), With<CameraListener>>,
+) {
+    for (_entity, mut transform, mut camera, mut listener) in listeners.iter_mut() {
+        // Only read once per entity so TransformListener can also receive events
+        if let Some(event) = reader.read().next() {
+            listener.handle(event, &mut *camera);
         }
     }
 }
 
 #[allow(dead_code)]
-pub fn orbit_camera_system(
+pub fn camera_system(
     time: Res<Time>,
-    keys: Res<ButtonInput<KeyCode>>,
-    mut view_store: ResMut<CameraViewStore>,
-    mut query: Query<(Entity, &mut Transform, &mut EditorCamera, &CameraViewSlot)>,
+    mut query: Query<(Entity, &mut Transform, &mut EditorCamera)>,
 ) {
     let dt = time.delta_secs();
-    let turn_speed = 2.0;
-    let move_speed = 10.0;
-
-    for (_cam_entity, mut transform, mut cam, slot) in &mut query {
-        if keys.pressed(KeyCode::ArrowRight) {
-            cam.target_yaw -= turn_speed * dt;
-        }
-        if keys.pressed(KeyCode::ArrowLeft) {
-            cam.target_yaw += turn_speed * dt;
-        }
-        if keys.pressed(KeyCode::ArrowUp) {
-            let dir = cam.target_focus.normalize_or_zero();
-            cam.target_focus -= dir * move_speed * dt;
-        }
-        if keys.pressed(KeyCode::ArrowDown) {
-            let dir = cam.target_focus.normalize_or_zero();
-            cam.target_focus += dir * move_speed * dt;
-        }
-        if keys.pressed(KeyCode::PageUp) {
-            cam.target_focus.y += move_speed * dt;
-        }
-        if keys.pressed(KeyCode::PageDown) {
-            cam.target_focus.y -= move_speed * dt;
-        }
-
-        let factor = 10.0 * dt;
+    let factor = 10.0 * dt;
+    
+    for (entity, mut transform, mut cam) in &mut query {
         cam.focus = cam.focus.lerp(cam.target_focus, factor);
-        cam.yaw = cam.yaw + (cam.target_yaw - cam.yaw) * factor;
-        cam.pitch = cam.pitch + (cam.target_pitch - cam.pitch) * factor;
-
-        if let Some(view) = view_store.views.get_mut(slot.0) {
-            view.focus = cam.focus;
-            view.target_focus = cam.target_focus;
-            view.radius = cam.radius;
-            view.yaw = cam.yaw;
-            view.target_yaw = cam.target_yaw;
-            view.pitch = cam.pitch;
-            view.target_pitch = cam.target_pitch;
-        }
+        cam.yaw = cam.yaw.lerp(cam.target_yaw, factor);
+        cam.pitch = cam.pitch.lerp(cam.target_pitch, factor);
 
         let rotation = Quat::from_axis_angle(Vec3::Y, cam.yaw) * Quat::from_axis_angle(Vec3::X, cam.pitch);
         let direction_vec = rotation * Vec3::Z;
 
         transform.translation = cam.focus + direction_vec * cam.radius;
+        transform.rotation = rotation;
         transform.look_at(cam.focus, Vec3::Y);
-    }
-}
-
-#[allow(dead_code)]
-pub fn apply_camera_viewpoints(
-    view_store: Res<CameraViewStore>,
-    mut query: Query<(&mut Transform, &CameraViewSlot), Without<EditorCamera>>,
-) {
-    for (mut transform, slot) in &mut query {
-        if let Some(view) = view_store.views.get(slot.0) {
-            let rotation = Quat::from_axis_angle(Vec3::Y, view.yaw) * Quat::from_axis_angle(Vec3::X, view.pitch);
-            let direction_vec = rotation * Vec3::Z;
-
-            transform.translation = view.focus + direction_vec * view.radius;
-            transform.rotation = rotation;
-        }
     }
 }
