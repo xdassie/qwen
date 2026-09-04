@@ -6,10 +6,11 @@ edition = "2024"
 [dependencies]
 strum = "0.27"
 strum_macros = "0.27"
+gltf = "1.4"
 reqwest = { version = "0.12", features = ["blocking"] }
 rodio = "0.21"
 dirs = "6.0"
-bevy = { version = "0.17", features = ["serialize", "bevy_picking", "bevy_core_pipeline", "bevy_gltf","jpeg", "default_font"] }
+bevy = { version = "0.17", features = ["serialize", "bevy_picking", "bevy_mesh_picking_backend", "bevy_core_pipeline", "bevy_gltf", "jpeg", "default_font"] }
 pango = "0.21"
 cairo-rs = { version = "0.21", features = ["png"] }
 pangocairo = "0.21"
@@ -22,6 +23,7 @@ uuid = { version = "1.22.0", features = ["v4", "serde"] }
 log = "0.4"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+meshopt = "0.6.2"
 
 [profile.dev]
 opt-level = 3

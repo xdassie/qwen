@@ -2,5 +2,5 @@ mod graphics;
 mod input;
 
 fn main() {
-    graphics::run();
+    graphics::bevy::run();
 }

@@ -5,6 +5,7 @@ use crate::graphics::recorder::{FrameCount, Recorder, ScreenshotRecorder};
 use crate::graphics::scene_loader::{SceneLoader, ModelSceneLoader, GltfLoadingState};
 use crate::graphics::transform::{TransformListener, TransformKeyboardPlugin};
 use crate::input::keyboard::KeyboardPlugin;
+use crate::input::mouse::MouseClickPlugin;
 
 
 pub fn get_model_path() -> String {
@@ -85,6 +86,7 @@ pub fn run() {
         .add_plugins(KeyboardPlugin)
         .add_plugins(TransformKeyboardPlugin)
         .add_plugins(CameraPlugin)
+        .add_plugins(MouseClickPlugin)
         .run();
 }
 
@@ -104,6 +106,7 @@ fn setup(mut commands: Commands) {
         Transform::from_xyz(0.0, 0.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
         EditorCamera::default(),
         CameraListener,
+        MeshPickingCamera,
     ));
 
         commands.spawn((

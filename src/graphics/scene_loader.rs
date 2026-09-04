@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use std::fs;
+use crate::input::mouse::MouseClickReceiver;
 
 #[derive(Resource, Clone, Default)]
 pub struct GltfLoadingState {
@@ -101,6 +102,7 @@ impl SceneLoader for ModelSceneLoader {
                 SceneRoot(state.scene_handle.clone()),
                 Transform::default(),
                 Visibility::Visible,
+                MouseClickReceiver::default(),
             ));
             return;
         }
