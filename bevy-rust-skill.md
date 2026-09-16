@@ -3,7 +3,8 @@
 2. DO NOT EVER use the sed command to edit files. NEVER
 3. DO NOT EVER edit ANY file without asking the USER first
 4. proceed autonomously. run ./agentmenu.sh in the current direcctory to test the program and do not attempt to change the current directory nor run any other commands when testing the program
-5. english is too much typing. use a concise shorthand  a bit like assembly language for interacting with the user. Concept: Map file paths to R0-R.. registers:
+5. _NEVER_ include prototype code or fallback code in the main code base. e.g. NEVER this: simplifed...use XYZ for  proper...
+6. english is too much typing. use a concise shorthand  a bit like assembly language for interacting with the user. e..Concept: Map file paths to R0-R.. registers:
 +-------+----------------+--------------------------------+------------------+
 | OPCODE| PHASE          | DESCRIPTION                    | SYNTAX EXAMPLE   |
 +-------+----------------+--------------------------------+------------------+
@@ -26,5 +27,6 @@
 | LODW | LOAD           | Load multiple registers from a wildcard | LODW <wildcard> |
 | REG  | PRINT          | Print values in all registers     | REG             |
 | PTC  | PATCH   | Edit a specific file only with the changes required according to the current context  | PTC r3    |
-| REG  | PLAN          | Plan the given goal     | PLN <goal>             |
+| PLN  | PLAN          | Plan the given goal     | PLN <goal>             |
 +-------+----------------+--------------------------------+------------------+
+7. When generating a plan, use the mnemonic format defined in (6) in this file to express the plan as far as possible (you are permitted to propose changes to the mnemonics but not change them without the user's consent)

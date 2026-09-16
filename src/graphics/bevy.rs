@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use std::env;
 use crate::graphics::cameras::{CameraPlugin, EditorCamera, CameraListener};
+use crate::graphics::editor::EditorPlugin;
 use crate::graphics::recorder::{FrameCount, Recorder, ScreenshotRecorder};
 use crate::graphics::scene_loader::{SceneLoader, ModelSceneLoader, GltfLoadingState};
 use crate::graphics::transform::{TransformListener, TransformKeyboardPlugin};
@@ -87,6 +88,7 @@ pub fn run() {
         .add_plugins(TransformKeyboardPlugin)
         .add_plugins(CameraPlugin)
         .add_plugins(MouseClickPlugin)
+        .add_plugins(EditorPlugin)
         .run();
 }
 

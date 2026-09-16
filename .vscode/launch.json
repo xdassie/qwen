@@ -1,31 +1,16 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug executable 'bevy_hello_world'",
+            "name": "Debug Rust EXE",
             "type": "lldb",
             "request": "launch",
-            "cargo": {
-                "args": [
-                    "run",
-                    "--bin=bevy_hello_world"
-                ]
-            },
-            "args": []
-        },
-        {
-            "name": "Debug unit tests in executable 'bevy_hello_world'",
-            "type": "lldb",
-            "request": "launch",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--bin=bevy_hello_world"
-                ]
-            }
+            "program": "${workspaceFolder}/target/debug/bevy_hello_world",
+            "args": [
+                "--model=/home/dave/sync/test/src/rust/qwen/assets/Apollo Soyuz.glb"
+            ],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "cargo build"
         }
     ]
 }

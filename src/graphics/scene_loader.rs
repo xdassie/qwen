@@ -60,6 +60,11 @@ impl SceneLoader for ModelSceneLoader {
             return;
         }
         
+        if state.scene_handle != Handle::default() {
+            info!("Scene already loaded: {}", model_path);
+            return;
+        }
+        
         let scene_handle = asset_server.load(
             GltfAssetLabel::Scene(0).from_asset(model_path)
         );

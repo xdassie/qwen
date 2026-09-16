@@ -83,7 +83,7 @@ fn extract_modifiers(keyboard: &ButtonInput<KeyCode>) -> ModifierKeys {
 /// Consumes the event and performs its own logic
 /// Generic over a state component to allow flexibility
 pub trait KeyboardListener<State: Component>: Component {
-    fn handle(&mut self, event: &KeyboardEvent, state: &mut State) {
+    fn handle(&mut self, event: &KeyboardEvent, _state: &mut State) {
         info!("KeyboardEvent consumed: code={:?}, pressed={}", event.code, event.pressed);
         trace!("KeyboardEvent consumed details: modifiers.shift={:?}, modifiers.ctrl={:?}, modifiers.alt={:?}, modifiers.win={:?}, modifiers.fn_lock={:?}, modifiers.caps_lock={:?}, modifiers.scroll_lock={:?}", 
             event.modifiers.shift, event.modifiers.ctrl, event.modifiers.alt, event.modifiers.win, event.modifiers.fn_lock, event.modifiers.caps_lock, event.modifiers.scroll_lock);

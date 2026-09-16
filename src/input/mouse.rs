@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::picking::prelude::*;
+use bevy::prelude::*;
 use bevy::input::mouse::MouseButton;
 
 /// Component to receive mouse click events
@@ -49,7 +49,7 @@ fn mouse_click_system(
     mut query: Query<(Entity, &mut MouseClickReceiver)>,
 ) {
     // Process all entities with MouseClickReceiver
-    for (entity, mut receiver) in query.iter_mut() {
+    for (_entity, mut receiver) in query.iter_mut() {
         receiver.click_count += 1;
     }
 }
