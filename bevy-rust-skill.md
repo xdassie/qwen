@@ -30,3 +30,5 @@
 | PLN  | PLAN          | Plan the given goal     | PLN <goal>             |
 +-------+----------------+--------------------------------+------------------+
 7. When generating a plan, use the mnemonic format defined in (6) in this file to express the plan as far as possible (you are permitted to propose changes to the mnemonics but not change them without the user's consent)
+8. Never run cargo clean. If you suspect some kind of symbol or object file conflict, stop and alert the user.
+

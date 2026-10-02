@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use bevy::prelude::*;
 use bevy::input::mouse::MouseButton;
 
 /// Component to receive mouse click events
@@ -25,6 +24,7 @@ impl Plugin for MouseClickPlugin {
         app.add_plugins(MeshPickingPlugin)
             .add_message::<MouseClickEvent>()
             .add_systems(Update, mouse_click_system)
+            .add_systems(PostUpdate, crate::graphics::scene_loader::add_click_receptors_to_scene_children)
             .add_observer(mouse_click_observer);
     }
 }

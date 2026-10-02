@@ -1,13 +1,17 @@
 use bevy::prelude::*;
+use bevy::render::renderer::RenderAdapterInfo;
+use bevy::input::keyboard::KeyCode;
 use std::env;
+use crate::debug::memory::{MemoryTracker, query_gpu_memory, query_asset_memory, EcsMemory, query_process_memory};
+use crate::input::keyboard::KeyboardEvent;
 use crate::graphics::cameras::{CameraPlugin, EditorCamera, CameraListener};
 use crate::graphics::editor::EditorPlugin;
 use crate::graphics::recorder::{FrameCount, Recorder, ScreenshotRecorder};
-use crate::graphics::scene_loader::{SceneLoader, ModelSceneLoader, GltfLoadingState};
+use crate::graphics::scene_loader::{SceneLoader, ModelSceneLoader, GltfLoadingState, TextureLoadInfo, log_textures_at_load};
+use crate::graphics::scene_saver::{SceneSaverPlugin, ExportOnLoad};
 use crate::graphics::transform::{TransformListener, TransformKeyboardPlugin};
 use crate::input::keyboard::KeyboardPlugin;
 use crate::input::mouse::MouseClickPlugin;
-
 
 pub fn get_model_path() -> String {
     let args: Vec<String> = env::args().collect();
@@ -31,24 +35,32 @@ pub fn run() {
         0
     };
     
+    let export_on_load = args.iter().any(|a| a == "--export" || a.starts_with("--export="));
+    
     let loader = ModelSceneLoader::new(&get_model_path());
     let recorder = ScreenshotRecorder::new(limit as u64);
     
     let mut app = App::new();
     app.init_resource::<FrameCount>();
     app.init_resource::<GltfLoadingState>();
+    app.init_resource::<MemoryTracker>();
     
     app.insert_resource(FrameCount(0));
     app.insert_resource(loader);
     app.insert_resource(recorder);
+    app.insert_resource(ExportOnLoad { enabled: export_on_load, done: false });
     
     app.add_systems(Startup, setup)
+        .add_systems(Startup, |mut tracker: ResMut<MemoryTracker>, adapter_info: Res<RenderAdapterInfo>| {
+            tracker.gpu_memory = query_gpu_memory(&adapter_info);
+        })
         .add_systems(Startup, |loader: Res<ModelSceneLoader>, asset_server: Res<AssetServer>, state: ResMut<GltfLoadingState>| {
             ModelSceneLoader::load_glb(&loader, &asset_server, state);
         })
         .add_systems(Update, |scenes: Res<Assets<Scene>>, mut commands: Commands, time: Res<Time>, loader: Res<ModelSceneLoader>, state: ResMut<GltfLoadingState>| {
             ModelSceneLoader::on_glb_loaded(&loader, &scenes, state, &mut commands, &time);
         })
+        .add_systems(Update, log_textures_at_load)
         .add_systems(Update, |entities: Query<Entity, With<SceneRoot>>, mut commands: Commands, has_listener: Query<Entity, (With<TransformListener>, With<SceneRoot>)>| {
             for entity in entities.iter() {
                 if !has_listener.iter().any(|e| e == entity) {
@@ -67,7 +79,8 @@ pub fn run() {
             if limit > 0 {
                 <ScreenshotRecorder as Recorder>::capture_screenshot(&*recorder, current_frame, commands, window_query);
             }
-        });
+        })
+        .add_systems(Update, memory_dump_system);
     
     app.add_plugins(DefaultPlugins
             .set(WindowPlugin {
@@ -89,6 +102,7 @@ pub fn run() {
         .add_plugins(CameraPlugin)
         .add_plugins(MouseClickPlugin)
         .add_plugins(EditorPlugin)
+        .add_plugins(SceneSaverPlugin)
         .run();
 }
 
@@ -120,4 +134,37 @@ fn setup(mut commands: Commands) {
         },
         Transform::from_xyz(0.0, 0.0, 0.0),
     ));
+}
+
+fn memory_dump_system(
+    mut events: MessageReader<KeyboardEvent>,
+    mut tracker: ResMut<MemoryTracker>,
+    meshes: Res<Assets<Mesh>>,
+    textures: Res<Assets<Image>>,
+    adapter_info: Res<RenderAdapterInfo>,
+    entity_query: Query<Entity>,
+    transform_query: Query<&Transform>,
+) {
+    for event in events.read() {
+        if event.code == KeyCode::KeyM 
+            && event.modifiers.ctrl 
+            && event.pressed {
+            
+            tracker.process_memory = query_process_memory();
+            tracker.gpu_memory = query_gpu_memory(&adapter_info);
+            tracker.asset_memory = query_asset_memory(&meshes, &textures);
+            
+            let entity_count = entity_query.iter().len();
+            let transform_count = transform_query.iter().len();
+            let transform_size = entity_count as u64 * std::mem::size_of::<Transform>() as u64;
+            
+            tracker.ecs_memory = EcsMemory {
+                entity_count,
+                component_type_count: 1,
+                estimated_bytes: transform_size,
+            };
+            
+            tracker.log_summary();
+        }
+    }
 }

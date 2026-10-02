@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::pbr::StandardMaterial;
 use std::fs;
 use crate::input::mouse::MouseClickReceiver;
 
@@ -10,11 +11,44 @@ pub struct GltfLoadingState {
     pub scene_handle: Handle<Scene>,
 }
 
+#[derive(Resource)]
+pub struct TextureLoadInfo {
+    pub loaded: bool,
+}
+
+impl Default for TextureLoadInfo {
+    fn default() -> Self {
+        TextureLoadInfo { loaded: false }
+    }
+}
+
 pub trait SceneLoader: Resource {
     fn load_glb(loader: &Self, asset_server: &Res<AssetServer>, state: ResMut<GltfLoadingState>) where Self: 'static;
     
     fn on_glb_loaded(loader: &Self, scenes: &Res<Assets<Scene>>, state: ResMut<GltfLoadingState>, commands: &mut Commands, time: &Res<Time>) where Self: 'static;
 }
+
+pub fn add_click_receptors_to_scene_children(
+    mut commands: Commands,
+    children: Query<&Children>,
+    scene_roots: Query<(Entity, &SceneRoot), Added<SceneRoot>>,
+) {
+    for (root_entity, _scene_root) in &scene_roots {
+        let mut to_process = Vec::new();
+        if let Ok(children_ref) = children.get(root_entity) {
+            to_process.extend(children_ref.iter());
+        }
+        
+        while let Some(entity) = to_process.pop() {
+            commands.entity(entity).insert(MouseClickReceiver::default());
+            if let Ok(children_ref) = children.get(entity) {
+                to_process.extend(children_ref.iter());
+            }
+        }
+    }
+}
+
+
 
 #[derive(Resource, Clone)]
 pub struct ModelSceneLoader {
@@ -85,18 +119,15 @@ impl SceneLoader for ModelSceneLoader {
                 state.error = Some("Scene loading timed out".to_string());
                 error!("Scene loading timed out: {:?}", state.scene_handle);
                 state.loading = false;
+                return;
             }
-        }
-        
-        let scene_opt = scenes.get(&state.scene_handle);
-        
-        if scene_opt.is_none() {
-            state.loaded = false;
-            state.error = Some("Scene not found in assets".to_string());
-            error!("Scene not found: {:?}", state.scene_handle);
-        }
-        
-        if !state.loaded {
+            
+            let scene_opt = scenes.get(&state.scene_handle);
+            
+            if scene_opt.is_none() {
+                return;
+            }
+            
             state.loaded = true;
             state.loading = false;
             state.error = None;
@@ -109,7 +140,86 @@ impl SceneLoader for ModelSceneLoader {
                 Visibility::Visible,
                 MouseClickReceiver::default(),
             ));
-            return;
+            
+            commands.init_resource::<TextureLoadInfo>();
         }
     }
+}
+
+pub fn log_textures_at_load(
+    materials: Res<Assets<StandardMaterial>>,
+    images: Res<Assets<Image>>,
+    mut load_info: Option<ResMut<TextureLoadInfo>>,
+    query: Query<(Entity, Option<&MeshMaterial3d<StandardMaterial>>)>,
+) {
+    if let Some(mut info) = load_info {
+        if info.loaded {
+            return;
+        }
+        info.loaded = true;
+    } else {
+        return;
+    }
+    
+    info!("========== TEXTURE LOAD LOG ==========");
+    info!("Total images in asset server: {}", images.len());
+    
+    let mut texture_count = 0;
+    let mut materials_with_textures = Vec::new();
+    
+    for (entity, material) in &query {
+        if let Some(material_handle) = material {
+            if let Some(mat) = materials.get(&material_handle.0) {
+                let mut has_texture = false;
+                let mut textures = Vec::new();
+                
+                if let Some(tex) = &mat.base_color_texture {
+                    has_texture = true;
+                    if let Some(img) = images.get(tex) {
+                        textures.push(format!("base_color: {}x{}", img.texture_descriptor.size.width, img.texture_descriptor.size.height));
+                    } else {
+                        textures.push("base_color: (image not found)".to_string());
+                    }
+                }
+                
+                if let Some(tex) = &mat.metallic_roughness_texture {
+                    has_texture = true;
+                    if let Some(img) = images.get(tex) {
+                        textures.push(format!("metallic_roughness: {}x{}", img.texture_descriptor.size.width, img.texture_descriptor.size.height));
+                    } else {
+                        textures.push("metallic_roughness: (image not found)".to_string());
+                    }
+                }
+                
+                if let Some(tex) = &mat.normal_map_texture {
+                    has_texture = true;
+                    if let Some(img) = images.get(tex) {
+                        textures.push(format!("normal_map: {}x{}", img.texture_descriptor.size.width, img.texture_descriptor.size.height));
+                    } else {
+                        textures.push("normal_map: (image not found)".to_string());
+                    }
+                }
+                
+                if let Some(tex) = &mat.emissive_texture {
+                    has_texture = true;
+                    if let Some(img) = images.get(tex) {
+                        textures.push(format!("emissive: {}x{}", img.texture_descriptor.size.width, img.texture_descriptor.size.height));
+                    } else {
+                        textures.push("emissive: (image not found)".to_string());
+                    }
+                }
+                
+                if has_texture {
+                    materials_with_textures.push((entity, textures));
+                    texture_count += 1;
+                }
+            }
+        }
+    }
+    
+    info!("Materials with textures: {}", texture_count);
+    for (i, (entity, textures)) in materials_with_textures.iter().enumerate() {
+        info!("  Material {}: {:?}", i, textures.join(", "));
+    }
+    info!("=====================================");
 }

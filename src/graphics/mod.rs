@@ -4,4 +4,5 @@ pub mod cameras;
 pub mod editor;
 pub mod recorder;
 pub mod scene_loader;
+pub mod scene_saver;
 pub mod transform;

@@ -911,9 +911,12 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "bevy_asset",
+ "bevy_mesh",
  "cairo-rs",
  "dirs",
  "gltf",
+ "gltf-json",
  "image",
  "log",
  "pango",
